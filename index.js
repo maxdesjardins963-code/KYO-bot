@@ -1,210 +1,169 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const express = require('express');
-require('dotenv').config();
-
-// ---------------- SERVER WEB POUR RENDER ----------------
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.get('/', (req, res) => res.send('Kyotaru Bot Slash en ligne !'));
+app.listen(process.env.PORT || 10000);
 
-app.get('/', (req, res) => {
-    res.send("Le bot Kyotaru Family est en ligne et protégé contre la mise en veille !");
-});
+const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 
-app.listen(PORT, () => {
-    console.log(`Serveur Web Kyotaru activé sur le port ${PORT} (Anti-crash Render).`);
-});
-
-// ---------------- CONFIGURATION DISCORD ----------------
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMessages
     ]
 });
 
-// Configuration des IDs fournis
-const ALLOWED_ROLE_ID = "1499852043408642099";
-const LOG_CHANNEL_ID = "1506792520133251253";
-const PREFIX = "?"; // Préfixe personnalisé pour la Kyotaru Family
+// CONFIGURATION 
+const STAFF_ID = "1499852043408642099"; // Garde ton ID ici
+const LOGS_CHANNEL_ID = "1506792520133251253";
 
-client.once('ready', () => {
-    console.log(`[Kyotaru Family] Bot connecté en tant que : ${client.user.tag}`);
-    client.user.setActivity('Protéger la Kyotaru Family ⚔️');
+// Base de données locale
+const bddPath = path.join(__dirname, 'kyotarudata.json');
+let bdd = { points: {}, giveaways: {} };
+
+if (fs.existsSync(bddPath)) {
+    try { bdd = JSON.parse(fs.readFileSync(bddPath, 'utf-8')); } catch (e) {}
+}
+function sauvegarderDonnees() { fs.writeFileSync(bddPath, JSON.stringify(bdd, null, 2)); }
+
+// Liste des commandes à enregistrer chez Discord
+const commands = [
+    new SlashCommandBuilder().setName('points').setDescription('Affiche tes KyotaruPoints ou ceux d\'un membre').addUserOption(opt => opt.setName('membre').setDescription('Le membre à checker')),
+    new SlashCommandBuilder().setName('setpoints').setDescription('Définir les points d\'un membre (Staff)').addUserOption(opt => opt.setName('membre').setDescription('Le membre').setRequired(true)).addIntegerOption(opt => opt.setName('montant').setDescription('Le montant').setRequired(true)),
+    new SlashCommandBuilder().setName('giveaway').setDescription('Lancer un grand giveaway (Staff)').addIntegerOption(opt => opt.setName('temps').setDescription('Temps en minutes').setRequired(true)).addStringOption(opt => opt.setName('lot').setDescription('Le lot à gagner').setRequired(true)),
+    new SlashCommandBuilder().setName('minigiveaway').setDescription('Lancer un mini giveaway (Staff)').addIntegerOption(opt => opt.setName('temps').setDescription('Temps en minutes').setRequired(true)).addStringOption(opt => opt.setName('lot').setDescription('Le lot à gagner').setRequired(true)),
+    new SlashCommandBuilder().setName('kick').setDescription('Exclure un membre (Staff)').addUserOption(opt => opt.setName('membre').setDescription('Le membre à exclure').setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription('La raison')),
+    new SlashCommandBuilder().setName('ban').setDescription('Bannir un membre (Staff)').addUserOption(opt => opt.setName('membre').setDescription('Le membre à bannir').setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription('La raison')),
+    new SlashCommandBuilder().setName('slots').setDescription('Jeu de la machine à sous'),
+    new SlashCommandBuilder().setName('hack').setDescription('Simuler un piratage fun sur un membre').addUserOption(opt => opt.setName('membre').setDescription('La victime').setRequired(true)),
+    new SlashCommandBuilder().setName('iq').setDescription('Affiche ton QI ou celui d\'un membre').addUserOption(opt => opt.setName('membre').setDescription('Le membre')),
+    new SlashCommandBuilder().setName('fight').setDescription('Affronter un membre au hasard').addUserOption(opt => opt.setName('adversaire').setDescription('Ton adversaire').setRequired(true)),
+    new SlashCommandBuilder().setName('joke').setDescription('Raconte une blague de papa'),
+    new SlashCommandBuilder().setName('bg').setDescription('Calcule le taux de BG').addUserOption(opt => opt.setName('membre').setDescription('Le membre')),
+    new SlashCommandBuilder().setName('sus').setDescription('Calcule le taux de suspicion').addUserOption(opt => opt.setName('membre').setDescription('Le membre')),
+    new SlashCommandBuilder().setName('dice').setDescription('Lancer un dé à 6 faces'),
+    new SlashCommandBuilder().setName('8ball').setDescription('Poser une question à la boule magique').addStringOption(opt => opt.setName('question').setDescription('Ta question').setRequired(true)),
+    new SlashCommandBuilder().setName('avatar').setDescription('Afficher l\'avatar d\'un membre').addUserOption(opt => opt.setName('membre').setDescription('Le membre'))
+].map(command => command.toJSON());
+
+// Enregistrement des commandes quand le bot s'allume
+client.once('ready', async () => {
+    console.log(`🤖 Bot connecté sur ${client.user.tag}`);
+    
+    const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+    try {
+        console.log('🔄 Enregistrement des commandes / en cours...');
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+        console.log('✅ Toutes les commandes / ont été enregistrées avec succès !');
+    } catch (error) {
+        console.error(error);
+    }
 });
 
-client.on('messageCreate', async (message) => {
-    if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+// Gestionnaire des interactions (Slash Commands)
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isChatInputCommand()) return;
 
-    const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
-    const logChannel = message.guild.channels.cache.get(LOG_CHANNEL_ID);
+    const { commandName, options, user, guild } = interaction;
 
-    // ==========================================
-    // 🛡️ MODÉRATION KYOTARU (RÔLE STAFF STRICT)
-    // ==========================================
-
-    if (command === 'ban' || command === 'kick') {
-        // Vérification de sécurité sur le rôle
-        if (!message.member.roles.cache.has(ALLOWED_ROLE_ID)) {
-            return message.reply("❌ `Erreur :` Tu ne possèdes pas le rôle requis pour exécuter la modération de la Kyotaru Family.");
-        }
-
-        const target = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
-        if (!target) return message.reply(`❌ Utilisation correcte : \`${PREFIX}${command} @pseudo [raison]\``);
-        const reason = args.slice(1).join(" ") || "Exclu par un haut gradé de la famille.";
-
-        if (command === 'ban') {
-            if (!target.bannable) return message.reply("❌ Impossible de bannir ce membre. Mes permissions sont trop basses.");
-            await target.ban({ reason });
-            message.reply(`🚨 **🚨 ${target.user.tag}** a été banni définitivement de la Kyotaru Family.`);
-            
-            if (logChannel) {
-                const embed = new EmbedBuilder()
-                    .setTitle('🚷 [BAN] Bannissement Kyotaru')
-                    .setColor('#8b0000') // Rouge foncé style mafia/famille
-                    .addFields(
-                        { name: 'Membre Banni', value: `${target.user.tag} (${target.id})` },
-                        { name: 'Exécuté par', value: `${message.author.tag}` },
-                        { name: 'Raison officielle', value: reason }
-                    ).setTimestamp();
-                logChannel.send({ embeds: [embed] });
-            }
-        }
-
-        if (command === 'kick') {
-            if (!target.kickable) return message.reply("❌ Impossible d'expulser ce membre.");
-            await target.kick(reason);
-            message.reply(`🥾 **${target.user.tag}** a été éjecté du serveur.`);
-
-            if (logChannel) {
-                const embed = new EmbedBuilder()
-                    .setTitle('🥾 [KICK] Expulsion Kyotaru')
-                    .setColor('#d2691e')
-                    .addFields(
-                        { name: 'Membre Expulsé', value: `${target.user.tag} (${target.id})` },
-                        { name: 'Exécuté par', value: `${message.author.tag}` },
-                        { name: 'Raison officielle', value: reason }
-                    ).setTimestamp();
-                logChannel.send({ embeds: [embed] });
-            }
-        }
+    // 🪙 POINTS
+    if (commandName === 'points') {
+        const cible = options.getUser('membre') || user;
+        const pts = bdd.points[cible.id] || 0;
+        return interaction.reply(`🪙 **${cible.username}** possède **${pts} KyotaruPoints** !`);
     }
 
-    // ==========================================
-    // 🎉 10 COMMANDES FUN (POUR LES MEMBRES)
-    // ==========================================
+    if (commandName === 'setpoints') {
+        if (user.id !== STAFF_ID) return interaction.reply({ content: "❌ Réservé au staff.", ephemeral: true });
+        const cible = options.getUser('membre');
+        const montant = options.getInteger('montant');
+        bdd.points[cible.id] = montant;
+        sauvegarderDonnees();
+        return interaction.reply(`✅ Les **KyotaruPoints** de ${cible.username} ont été définis à **${montant}** !`);
+    }
 
-    // 1. FAKE HACK (Style Cyber-Attaque Kyotaru)
-    if (command === 'hack') {
-        const target = message.mentions.users.first();
-        if (!target) return message.reply("💻 Cible manquante ! Utilise : `?hack @pseudo`");
-
-        const msg = await message.channel.send(`🛰️ Initialisation du protocole \`Kyotaru_NetCrack.sh\`...`);
+    // 🎉 GIVEAWAYS
+    if (commandName === 'giveaway' || commandName === 'minigiveaway') {
+        if (user.id !== STAFF_ID) return interaction.reply({ content: "❌ Réservé au staff.", ephemeral: true });
+        const temps = options.getInteger('temps');
+        const lot = options.getString('lot');
         
-        setTimeout(() => msg.edit(`🕵️‍♂️ Infiltration des bases de données de **${target.username}** en cours...`), 1500);
-        setTimeout(() => msg.edit(`🌐 Adresse IP locale interceptée : \`172.16.${Math.floor(Math.random() * 254)}.${Math.floor(Math.random() * 254)}\``), 3000);
-        setTimeout(() => msg.edit(`⚠️ Dossier secret découvert : *"Comment battre la Kyotaru Family en 1v1 (Tuto raté)"*`), 4500);
-        setTimeout(() => msg.edit(`🧬 Statut Blox Fruits compromis : Utilise le style de combat 'Combat' de base à cause d'un manque de fragments.`), 6000);
-        setTimeout(() => msg.edit(`💥 Destruction à distance des jetons Discord effectuée.`), 7500);
-        setTimeout(() => msg.edit(`🏴 **${target} a été piraté avec succès par la Kyotaru Family.** Désinstallation de son système...`), 9000);
-    }
-
-    // 2. FRUIT DU CHEF
-    if (command === 'fruit') {
-        const fruits = [
-            '🍌 Kilo', '🍏 Spin', '🕵️‍♂️ Chop', '🔥 Flame', '❄️ Ice', '💡 Light', 
-            '🌋 Magma', '✨ Buddha (Le favori du crew)', '⚡ Rumble', '🍩 Dough', 
-            '🦕 T-Rex', '🐆 Leopard', '🐉 Dragon (Futur Rework !)'
-        ];
-        const randomFruit = fruits[Math.floor(Math.random() * fruits.length)];
-        message.reply(`🎁 L'intendant de la Kyotaru Family t'offre le fruit suivant : **${randomFruit}** ! C'est cadeau.`);
-    }
-
-    // 3. STATUT DANS LA FAMILLE (Jauge de Respect)
-    if (command === 'respect') {
-        const target = message.mentions.users.first() || message.author;
-        const respectPercent = Math.floor(Math.random() * 101);
-        
-        let grade = "Nouvelle Recrue 🪙";
-        if (respectPercent > 40) grade = "Membre Respectable ⚔️";
-        if (respectPercent > 75) grade = "Bras Droit de confiance 🎖️";
-        if (respectPercent === 100) grade = "Parrain de la Famille 👑";
-
-        message.channel.send(`📊 Le taux de respect de **${target.username}** au sein de la Kyotaru Family est de **${respectPercent}%**.\n**Statut :** \`${grade}\``);
-    }
-
-    // 4. PRIME DE RECHERCHE (Bounty Crew)
-    if (command === 'bounty') {
-        const fakeBounty = (Math.random() * 30).toFixed(1);
-        message.reply(`🏴 Si la Marine mettait ta tête à prix, tu vaudrais environ **${fakeBounty} Millions** de Berrys ! (Selon nos experts)`);
-    }
-
-    // 5. DUEL DE REGARDS (Coinflip)
-    if (command === 'duel') {
-        const issues = [
-            '⚔️ Tu as sorti ton sabre en premier, tu gagnes le duel !',
-            '🌊 Tu as glissé dans l\'eau avant même le début du combat. Défaite humiliante.'
-        ];
-        message.reply(issues[Math.floor(Math.random() * issues.length)]);
-    }
-
-    // 6. PHRASE DE BOSS
-    if (command === 'boss') {
-        const punchlines = [
-            "On ne choisit pas la Kyotaru Family, c'est la Kyotaru Family qui nous choisit.",
-            "T'as le style d'un mec qui possède la v4 maximale de chaque race.",
-            "Ta puissance fait trembler les boss de la troisième mer.",
-            "Ne parle pas de skill à quelqu'un qui maîtrise le jeu comme toi."
-        ];
-        message.reply(`🕶️ ${punchlines[Math.floor(Math.random() * punchlines.length)]}`);
-    }
-
-    // 7. PUNITION DE LA FAMILLE (Slap)
-    if (command === 'slap') {
-        const target = message.mentions.users.first();
-        if (!target) return message.reply("👊 Qui a manqué de respect ? Donne un nom : `?slap @pseudo`");
-        if (target.id === message.author.id) return message.reply("Tu ne peux pas te corriger toi-même !");
-        message.channel.send(`💥 **${message.author.username}** remet les idées en place de **${target.username}** avec une énorme balayette réglementaire !`);
-    }
-
-    // 8. ALLIANCE DE CREW (Love meter)
-    if (command === 'alliance') {
-        const target = message.mentions.users.first();
-        if (!target) return message.reply("🤝 Mentionne un autre membre pour tester votre alliance fraternelle !");
-        const alliancePercent = Math.floor(Math.random() * 101);
-        message.channel.send(`🤛 **Taux de fraternité** entre **${message.author.username}** et **${target.username}** : **${alliancePercent}%** d'affinité !`);
-    }
-
-    // 9. SECRET DE POLICHINELLE (Fake Google)
-    if (command === 'secret') {
-        const secrets = [
-            "Comment faire croire qu'on a du skill en spammant ?",
-            "Est-ce que c'est normal de perdre contre un PNJ niveau 50 ?",
-            "Acheter un faux badge d'administrateur Roblox",
-            "Pourquoi mon clavier a volé à travers la pièce après un ragequit ?"
-        ];
-        message.reply(`🔍 Fuite de l'historique secret de **${message.author.username}** :\n*"${secrets[Math.floor(Math.random() * secrets.length)]}"*`);
-    }
-
-    // 10. CARTE D'IDENTITÉ DE L'AVATAR
-    if (command === 'avatar') {
-        const user = message.mentions.users.first() || message.author;
         const embed = new EmbedBuilder()
-            .setTitle(`📸 Fiche d'identité visuelle de : ${user.username}`)
-            .setImage(user.displayAvatarURL({ dynamic: true, size: 1024 }))
-            .setColor('#1a1a1a');
-        message.channel.send({ embeds: [embed] });
+            .setTitle(commandName === 'minigiveaway' ? "🎁 MINI GIVEAWAY !" : "🎉 GRAND GIVEAWAY !")
+            .setDescription(`Réagissez avec 🎉 !\n\n**Lot :** ${lot}\n**Temps :** ${temps} min`)
+            .setColor(commandName === 'minigiveaway' ? 0x3498db : 0xe74c3c);
+            
+        const msg = await interaction.reply({ embeds: [embed], fetchReply: true });
+        await msg.react("🎉");
     }
-});
 
-// Anti-crash global pour Render
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('⚠️ [ANTI-CRASH KYOTARU] Rejet non géré :', reason);
-});
-process.on('uncaughtException', (err, origin) => {
-    console.error('⚠️ [ANTI-CRASH KYOTARU] Exception non capturée :', err);
+    // 🛡️ MODERATION
+    if (commandName === 'kick') {
+        if (user.id !== STAFF_ID) return interaction.reply({ content: "❌ Réservé au staff.", ephemeral: true });
+        const cible = options.getMember('membre');
+        const raison = options.getString('raison') || "Aucune raison";
+        await cible.kick(raison);
+        return interaction.reply(`✅ ${cible.user.tag} a été expulsé.`);
+    }
+
+    if (commandName === 'ban') {
+        if (user.id !== STAFF_ID) return interaction.reply({ content: "❌ Réservé au staff.", ephemeral: true });
+        const cible = options.getMember('membre');
+        const raison = options.getString('raison') || "Aucune raison";
+        await cible.ban({ reason: raison });
+        return interaction.reply(`✅ ${cible.user.tag} a été banni.`);
+    }
+
+    // 🕹️ COMMANDES FUN
+    if (commandName === 'slots') {
+        const emojis = ["🍎", "🍋", "🍇", "💎", "👑"];
+        const r1 = emojis[Math.floor(Math.random() * emojis.length)];
+        const r2 = emojis[Math.floor(Math.random() * emojis.length)];
+        const r3 = emojis[Math.floor(Math.random() * emojis.length)];
+        return interaction.reply(`🎰 **[ ${r1} | ${r2} | ${r3} ]**\n${(r1===r2 && r2===r3) ? "🎉 Gagné !" : "❌ Perdu !"}`);
+    }
+
+    if (commandName === 'hack') {
+        const cible = options.getUser('membre');
+        await interaction.reply(`💻 Initialisation du piratage sur **${cible.username}**...`);
+        setTimeout(() => interaction.editReply(`🕵️‍♂️ IP : \`192.168.${Math.floor(Math.random()*254)}.${Math.floor(Math.random()*254)}\`...`), 2000);
+        setTimeout(() => interaction.editReply(`💸 Piratage complet réussi ! Vol de robux terminé ! 🔥`), 4000);
+    }
+
+    if (commandName === 'joke') {
+        const blagues = ["Que dit une imprimante en colère ? J'ai des feuilles blanches !", "Quel est le comble pour un électricien ? De ne pas être au courant."];
+        return interaction.reply(`💬 ${blagues[Math.floor(Math.random() * blagues.length)]}`);
+    }
+
+    if (commandName === 'iq') {
+        const cible = options.getUser('membre') || user;
+        return interaction.reply(`🧠 QI de **${cible.username}** : **${Math.floor(Math.random() * 200)}**`);
+    }
+
+    if (commandName === 'bg') {
+        const cible = options.getUser('membre') || user;
+        return interaction.reply(`✨ Taux de BG de **${cible.username}** : **${Math.floor(Math.random() * 101)}%** 😎`);
+    }
+    
+    if (commandName === 'sus') {
+        const cible = options.getUser('membre') || user;
+        return interaction.reply(`🕵️‍♂️ **${cible.username}** est suspect à **${Math.floor(Math.random() * 101)}%**`);
+    }
+
+    if (commandName === 'dice') {
+        return interaction.reply(`🎲 Résultat du dé : **${Math.floor(Math.random() * 6) + 1}**`);
+    }
+
+    if (commandName === '8ball') {
+        const reponses = ["Oui !", "Non.", "Peut-être...", "C'est certain."];
+        return interaction.reply(`🔮 *${options.getString('question')}*\n🎱 **Réponse :** ${reponses[Math.floor(Math.random() * reponses.length)]}`);
+    }
+
+    if (commandName === 'avatar') {
+        const cible = options.getUser('membre') || user;
+        return interaction.reply(`🖼️ Avatar de ${cible.username} :\n${cible.displayAvatarURL({ dynamic: true, size: 1024 })}`);
+    }
 });
 
 client.login(process.env.TOKEN);
