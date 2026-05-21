@@ -83,7 +83,7 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName, options, user, guild, member } = interaction;
-    const logChannel = guild.channels.cache.get(LOG_CHANNEL_ID);
+    const logChannel = guild ? guild.channels.cache.get(LOG_CHANNEL_ID) : null;
 
     // 🪙 POINTS
     if (commandName === 'points') {
@@ -93,7 +93,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (commandName === 'setpoints') {
-        if (user.id !== STAFF_ID && !member.roles.cache.has(STAFF_ID)) {
+        if (user.id !== STAFF_ID && (!member || !member.roles.cache.has(STAFF_ID))) {
             return interaction.reply({ content: "❌ Tu ne possèdes pas les permissions requises pour modifier les points.", ephemeral: true });
         }
         const cible = options.getUser('membre');
@@ -105,7 +105,7 @@ client.on('interactionCreate', async interaction => {
 
     // 🎉 GIVEAWAYS
     if (commandName === 'giveaway' || commandName === 'minigiveaway') {
-        if (user.id !== STAFF_ID && !member.roles.cache.has(STAFF_ID)) {
+        if (user.id !== STAFF_ID && (!member || !member.roles.cache.has(STAFF_ID))) {
             return interaction.reply({ content: "❌ Réservé aux hauts gradés de la famille.", ephemeral: true });
         }
         const temps = options.getInteger('temps');
@@ -124,7 +124,7 @@ client.on('interactionCreate', async interaction => {
 
     // 🛡️ MODERATION
     if (commandName === 'kick' || commandName === 'ban') {
-        if (user.id !== STAFF_ID && !member.roles.cache.has(STAFF_ID)) {
+        if (user.id !== STAFF_ID && (!member || !member.roles.cache.has(STAFF_ID))) {
             return interaction.reply({ content: "❌ Tu ne possèdes pas le rôle requis pour exécuter la modération de la Kyotaru Family.", ephemeral: true });
         }
         const cible = options.getMember('membre');
@@ -228,7 +228,7 @@ client.on('interactionCreate', async interaction => {
 
     if (commandName === 'alliance') {
         const cible = options.getUser('membre');
-        return interaction.reply(`<b>🤛 Taux de fraternité</b> entre **${user.username}** et **${cible.username}** : **${Math.floor(Math.random() * 101)}%** d'affinité !`);
+        return interaction.reply(`🤛 **Taux de fraternité** entre **${user.username}** et **${cible.username}** : **${Math.floor(Math.random() * 101)}%** d'affinité !`);
     }
 
     if (commandName === 'secret') {
