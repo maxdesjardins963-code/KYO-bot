@@ -36,7 +36,7 @@ const BATIMENTS = {
     serveur: { nom: "💻 Serveur de Bot clandestin", prix: 500, revenu: 25 },
     bunker: { nom: "🛡️ Bunker Kyotaru-Data", prix: 2000, revenu: 120 },
     casino: { nom: "🎰 Mini-Casino Kyotaru", prix: 7500, revenu: 500 },
-    背徳: { nom: "👑 Quartier Général du Syndicat", prix: 25000, revenu: 2000 }
+    syndicat: { nom: "👑 Quartier Général du Syndicat", prix: 25000, revenu: 2000 }
 };
 
 // ---------------- ENREGISTREMENT DES SLASH COMMANDS ----------------
@@ -63,7 +63,7 @@ const commands = [
         .addIntegerOption(opt => opt.setName('montant').setDescription('Montant à investir').setRequired(true)),
     new SlashCommandBuilder().setName('recolter').setDescription('Récolter les points générés par tes entreprises et bâtiments achetés'),
 
-    // 🎰 CASINO PROMETHEUS (FAKED)
+    // 🎰 CASINO
     new SlashCommandBuilder().setName('slots').setDescription('Machine à sous : aligne les symboles pour le Jackpot !').addIntegerOption(opt => opt.setName('mise').setDescription('Montant à miser').setRequired(true)),
     new SlashCommandBuilder().setName('coinflip').setDescription('Double ou quitte sur un lancer de pièce').addStringOption(opt => opt.setName('choix').setDescription('pile ou face').setRequired(true).addChoices({name:'Pile', value:'pile'}, {name:'Face', value:'face'})).addIntegerOption(opt => opt.setName('mise').setDescription('Mise').setRequired(true)),
     new SlashCommandBuilder().setName('roulette').setDescription('Mise sur une couleur au casino (Rouge x2, Noir x2, Vert x14)').addStringOption(opt => opt.setName('couleur').setDescription('Rouge, Noir ou Vert').setRequired(true).addChoices({name:'Rouge (x2)', value:'rouge'}, {name:'Noir (x2)', value:'noir'}, {name:'Vert (x14)', value:'vert'})).addIntegerOption(opt => opt.setName('mise').setDescription('Mise').setRequired(true)),
@@ -76,7 +76,7 @@ const commands = [
     new SlashCommandBuilder().setName('clear').setDescription('Supprimer des messages en masse (Staff)').addIntegerOption(opt => opt.setName('nombre').setDescription('Nombre de messages (1-100)').setRequired(true)),
     new SlashCommandBuilder().setName('warn').setDescription('Donner un avertissement officiel (Staff)').addUserOption(opt => opt.setName('membre').setDescription('Le membre').setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription('Raison')),
 
-    // 🎭 HUMOUR, TESTS & HACK
+    // 🎭 HUMOUR & HACK
     new SlashCommandBuilder().setName('hack').setDescription('Lancer un protocole de cyber-attaque destructeur sur un membre').addUserOption(opt => opt.setName('membre').setDescription('La victime').setRequired(true)),
     new SlashCommandBuilder().setName('pourcentage').setDescription('Test de pourcentage d\'humour du clan (Gay, Furry, Gigachad...)')
         .addStringOption(opt => opt.setName('type').setDescription('Le test à effectuer').setRequired(true)
@@ -100,8 +100,8 @@ client.on('interactionCreate', async interaction => {
 
     const { commandName, options, user, guild, member } = interaction;
 
-    // Initialisation des données
-    if (!bdd.points[user.id]) bdd.points[user.id] = 100; // 100 points de départ pour les nouveaux !
+    // Initialisation des structures de données pour éviter tout crash 'undefined'
+    if (!bdd.points[user.id]) bdd.points[user.id] = 100; 
     if (!bdd.profil[user.id]) bdd.profil[user.id] = { titre: "Actionnaire Kyotaru 🪙", dailyCooldown: 0, warns: 0 };
     if (!bdd.entreprises[user.id]) bdd.entreprises[user.id] = { serveur: 0, bunker: 0, casino: 0, syndicat: 0 };
     if (!bdd.investissements[user.id]) bdd.investissements[user.id] = { dernierRecolte: Date.now() };
@@ -122,7 +122,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embedHelp] });
     }
 
-    // 🪙 POINTS (EXPLIQUÉ)
+    // 🪙 POINTS
     if (commandName === 'points') {
         const cible = options.getUser('membre') || user;
         const pts = bdd.points[cible.id] || 0;
@@ -139,7 +139,10 @@ client.on('interactionCreate', async interaction => {
         const cible = options.getUser('membre') || user;
         const pts = bdd.points[cible.id] || 0;
         const data = bdd.profil[cible.id] || { titre: "Actionnaire Kyotaru 🪙", warns: 0 };
-        const ent = bdd.entreprises[cible.id] || { serveur: 0, bunker: 0, casino: 0, syndicat: 0 };
+        
+        // Initialisation à la volée si la cible n'existe pas encore en BDD
+        if (!bdd.entreprises[cible.id]) bdd.entreprises[cible.id] = { serveur: 0, bunker: 0, casino: 0, syndicat: 0 };
+        const ent = bdd.entreprises[cible.id];
 
         let strEntreprises = `💻 Serveurs : **${ent.serveur || 0}**\n🛡️ Bunkers : **${ent.bunker || 0}**\n🎰 Casinos : **${ent.casino || 0}**\n👑 QG Syndicats : **${ent.syndicat || 0}**`;
 
@@ -173,20 +176,9 @@ client.on('interactionCreate', async interaction => {
 
     // 🏢 ACHETER UN BATIMENT
     if (commandName === 'acheter') {
-        let buildingId = options.getString('id').toLowerCase();
-        if (buildingId === 'syndicat') buildingId = 'syndicat'; // Alignement d'ID
+        const buildingId = options.getString('id').toLowerCase();
+        const choisi = BATIMENTS[buildingId];
 
-        let batiKey = buildingId;
-        if (buildingId === 'syndicat') batiKey = 'syndicat';
-
-        const structures = {
-            serveur: BATIMENTS.serveur,
-            bunker: BATIMENTS.bunker,
-            casino: BATIMENTS.casino,
-            syndicat: BATIMENTS.背徳
-        };
-
-        const choisi = structures[buildingId];
         if (!choisi) return interaction.reply({ content: "❌ ID de bâtiment invalide. Choisissez parmi : `serveur`, `bunker`, `casino`, `syndicat`.", ephemeral: true });
 
         const prix = choisi.prix;
@@ -207,18 +199,17 @@ client.on('interactionCreate', async interaction => {
         
         const mtn = Date.now();
         const tempsEcouleMs = mtn - investData.dernierRecolte;
-        const heures = Math.floor(tempsEcouleMs / 3600000); // 1 heure en millisecondes
+        const heures = Math.floor(tempsEcouleMs / 3600000); 
 
         if (heures < 1) {
             const minutesRestantes = Math.ceil((3600000 - tempsEcouleMs) / 60000);
             return interaction.reply({ content: `⏱️ Vos usines tournent encore. Revenez dans **${minutesRestantes} minute(s)** pour collecter les bénéfices.`, ephemeral: true });
         }
 
-        // Calcul des revenus
         const revServeur = (ent.serveur || 0) * BATIMENTS.serveur.revenu;
         const revBunker = (ent.bunker || 0) * BATIMENTS.bunker.revenu;
         const revCasino = (ent.casino || 0) * BATIMENTS.casino.revenu;
-        const revSyndicat = (ent.syndicat || 0) * BATIMENTS.背徳.revenu;
+        const revSyndicat = (ent.syndicat || 0) * BATIMENTS.syndicat.revenu;
 
         const totalParHeure = revServeur + revBunker + revCasino + revSyndicat;
         const gainTotal = totalParHeure * heures;
@@ -238,7 +229,7 @@ client.on('interactionCreate', async interaction => {
         if (bdd.points[user.id] < montant || montant <= 0) return interaction.reply("❌ Liquidités insuffisantes ou montant incorrect.");
 
         bdd.points[user.id] -= montant;
-        const multiplicateurs = [0, 0.2, 0.5, 1.5, 2.0, 3.5]; // 0 = perte totale, 3.5 = énorme crack boursier
+        const multiplicateurs = [0, 0.2, 0.5, 1.5, 2.0, 3.5]; 
         const resultatMulti = multiplicateurs[Math.floor(Math.random() * multiplicateurs.length)];
         const gainFinal = Math.floor(montant * resultatMulti);
 
@@ -248,13 +239,13 @@ client.on('interactionCreate', async interaction => {
         if (resultatMulti === 0) {
             return interaction.reply(`📉 **Crash Boursier Majeur !** La courbe s'est effondrée... Tu as perdu l'intégralité de ton investissement de **${montant} pts**.`);
         } else if (resultatMulti < 1) {
-            return interaction.reply(`📉 **Marché en baisse.** Tes actions perdent de la valeur. Tu ne récupères que **${gainFinal} pts** (Perte).`);
+            return interaction.reply(`📉 **Marché en baisse.** Tes actions perdent de la valeur. Tu ne récupères que **${gainFinal} pts**.`);
         } else {
             return interaction.reply(`📈 **BULL RUN CRYPTO !** Ton placement explose ! Tu récupères un chèque massif de **${gainFinal} KyotaruPoints** (Gain net de +${gainFinal - montant} pts) !`);
         }
     }
 
-    // 🎰 CASINO : MACHINE À SOUS EXPANSIVE
+    // 🎰 CASINO : SLOTS
     if (commandName === 'slots') {
         const mise = options.getInteger('mise');
         if (bdd.points[user.id] < mise || mise <= 0) return interaction.reply("❌ Solde insuffisant pour cette table.");
@@ -268,7 +259,7 @@ client.on('interactionCreate', async interaction => {
 
         if (s1 === s2 && s2 === s3) {
             let multi = 4;
-            if (s1 === '👑') multi = 10; // Jackpot Suprême
+            if (s1 === '👑') multi = 10; 
             const gains = mise * multi;
             bdd.points[user.id] += gains;
             sauvegarderDonnees();
@@ -284,14 +275,14 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // 🎰 CASINO : ROULETTE IMPÉRIALE
+    // 🎰 CASINO : ROULETTE
     if (commandName === 'roulette') {
         const couleurChoisie = options.getString('couleur');
         const mise = options.getInteger('mise');
         if (bdd.points[user.id] < mise || mise <= 0) return interaction.reply("❌ Fonds insuffisants.");
 
         bdd.points[user.id] -= mise;
-        const de = Math.floor(Math.random() * 37); // 0 à 36
+        const de = Math.floor(Math.random() * 37); 
         let couleurResultat = '';
 
         if (de === 0) couleurResultat = 'vert';
@@ -330,27 +321,28 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // 🕵️‍♂️ PROTOCOLE DE CYBER-ATTAQUE ULTRA-DÉTAILLÉ
+    // 🕵️‍♂️ PROTOCOLE DE CYBER-ATTAQUE CORRIGÉ
     if (commandName === 'hack') {
         const cible = options.getUser('membre');
-        
         await interaction.reply(`🛸 **[ALERTE SYSTEME]** Lancement du terminal de piratage offensif contre **${cible.username}**...`);
 
         setTimeout(() => interaction.editReply(`📡 **[STEP 1]** Injecting exploitative payload into Discord Webhook Token Bypass... \`[OK]\``), 1500);
         setTimeout(() => interaction.editReply(`🌐 **[STEP 2]** Interception de la passerelle IP : \`192.168.${Math.floor(Math.random()*254)}.${Math.floor(Math.random()*254)}\` • Fournisseur local localisé.`), 3200);
-        setTimeout(() => interaction.editReply(`📂 **[STEP 3]** Analyse des répertoires sensibles... Alerte ! Fichier texte trouvé : \`Mes_Faux_Badges_Admin_Roblox.txt\`. Extraction en cours...`), 5000);
-        setTimeout(() => interaction.editReply(`🎮 **[STEP 4]** Tentative de vidage du coffre-fort de Robux de la cible... Injection réussie.`), 6800);
+        setTimeout(() => interaction.editReply(`📂 **[STEP 3]** Analyse des répertoires sensibles... Extraction en cours...`), 5000);
+        setTimeout(() => interaction.editReply(`🎮 **[STEP 4]** Tentative de vidage du coffre-fort de la cible... Injection réussie.`), 6800);
         
         setTimeout(() => {
+            if (!bdd.points[cible.id]) bdd.points[cible.id] = 100;
             const chanceVol = Math.random() < 0.5;
+
             if (chanceVol && bdd.points[cible.id] > 20) {
                 const volPoints = Math.floor(Math.random() * 40) + 10;
                 bdd.points[cible.id] -= volPoints;
                 bdd.points[user.id] += volPoints;
                 sauvegarderDonnees();
-                return interaction.editReply(`🏴‍☠️ **[HACK TERMINÉ]** Piratage complété avec brio ! Le coupe-feu de **${cible.username}** a fondu. Tu lui as dérobé **${volPoints} KyotaruPoints** au passage ! 🔥`);
+                return interaction.editReply(`🏴‍☠️ **[HACK TERMINÉ]** Piratage complété avec brio ! Le coupe-feu de **${cible.username}** a fondu. Tu lui as dérobé **${volPoints} KyotaruPoints** ! 🔥`);
             } else {
-                return interaction.editReply(`🏴‍☠️ **[HACK TERMINÉ]** L'attaque a détruit les données de **${cible.username}**, mais ses pare-feu financiers ont tenu. Aucun point n'a pu être extrait cette fois !`);
+                return interaction.editReply(`🏴‍☠️ **[HACK TERMINÉ]** L'attaque a détruit les données de **${cible.username}**, mais ses pare-feu financiers ont tenu. Aucun point n'a pu être extrait !`);
             }
         }, 8500);
     }
@@ -387,7 +379,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply(`${icone} **DÉTECTEUR DU SYNDICAT (Humour)**\nLe taux de **${type.toUpperCase()}** chez **${cible.username}** est estimé à : **${pourcentage}%** !\n*» ${phrase}*`);
     }
 
-    // 🪙 LES AUTRES COMMANDES DE BASE OBLIGATOIRES (DAILY, LEADERBOARD, SETPOINTS, ANNONCE, STAFF)
+    // 🪙 FONCTIONS SECONDAIRES & DIRECTION
     if (commandName === 'daily') {
         const mtn = Date.now();
         const cooldown = bdd.profil[user.id].dailyCooldown || 0;
@@ -438,7 +430,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // MODERATION SCRIPT INTERNE
+    // MODERATION
     if (commandName === 'warn' || commandName === 'mute' || commandName === 'unmute' || commandName === 'clear' || commandName === 'kick' || commandName === 'ban') {
         if (user.id !== STAFF_ID && (!member || !member.roles.cache.has(STAFF_ID))) return interaction.reply({ content: "Refusé.", ephemeral: true });
         const cibleMember = options.getMember('membre');
@@ -470,8 +462,9 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Anti-crash
+// Anti-crash global
 process.on('unhandledRejection', (reason) => console.error('⚠️ Rejet non géré :', reason));
 process.on('uncaughtException', (err) => console.error('⚠️ Exception non capturée :', err));
 
 client.login(process.env.TOKEN);
+
