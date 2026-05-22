@@ -42,51 +42,51 @@ const BATIMENTS = {
 // ---------------- ENREGISTREMENT DES SLASH COMMANDS ----------------
 const commands = [
     // GENERAL & HELP
-    new SlashCommandBuilder().setName('help').setDescription('Affiche la liste complète de toutes les commandes du bot'),
-    new SlashCommandBuilder().setName('annonce').setDescription('Fait une annonce officielle via le bot (Staff)')
-        .addStringOption(opt => opt.setName('message').setDescription('Le contenu').setRequired(true))
-        .addStringOption(opt => opt.setName('style').setDescription('Le format').setRequired(true).addChoices({name: 'Embed', value: 'embed'}, {name: 'Texte', value: 'texte'})),
+    new SlashCommandBuilder().setName('help').setDescription("Affiche la liste complète de toutes les commandes du bot"),
+    new SlashCommandBuilder().setName('annonce').setDescription("Fait une annonce officielle via le bot (Staff)")
+        .addStringOption(opt => opt.setName('message').setDescription("Le contenu").setRequired(true))
+        .addStringOption(opt => opt.setName('style').setDescription("Le format").setRequired(true).addChoices({name: 'Embed', value: 'embed'}, {name: 'Texte', value: 'texte'})),
 
     // 🪙 ÉCONOMIE, PROFIL & EMPIRE
-    new SlashCommandBuilder().setName('profil').setDescription('Affiche ton empire, tes points et tes bâtiments').addUserOption(opt => opt.setName('membre').setDescription('Le membre')),
-    new SlashCommandBuilder().setName('points').setDescription('Affiche tes KyotaruPoints et comment en obtenir régulièrement').addUserOption(opt => opt.setName('membre').setDescription('Le membre')),
-    new SlashCommandBuilder().setName('setpoints').setDescription('Définir les points (Staff)').addUserOption(opt => opt.setName('membre').setDescription('Le membre').setRequired(true)).addIntegerOption(opt => opt.setName('montant').setDescription('Le montant').setRequired(true)),
-    new SlashCommandBuilder().setName('daily').setDescription('Récupère tes dividendes quotidiens (Points gratuits)'),
-    new SlashCommandBuilder().setName('leaderboard').setDescription('Affiche le Top 10 des membres les plus riches de la famille'),
-    new SlashCommandBuilder().setName('settitle').setDescription('Change ton titre sur ton /profil').addStringOption(opt => opt.setName('titre').setDescription('Ton nouveau titre').setRequired(true)),
+    new SlashCommandBuilder().setName('profil').setDescription("Affiche ton empire, tes points et tes bâtiments").addUserOption(opt => opt.setName('membre').setDescription("Le membre")),
+    new SlashCommandBuilder().setName('points').setDescription("Affiche tes KyotaruPoints et comment en obtenir régulièrement").addUserOption(opt => opt.setName('membre').setDescription("Le membre")),
+    new SlashCommandBuilder().setName('setpoints').setDescription("Définir les points (Staff)").addUserOption(opt => opt.setName('membre').setDescription("Le membre").setRequired(true)).addIntegerOption(opt => opt.setName('montant').setDescription("Le montant").setRequired(true)),
+    new SlashCommandBuilder().setName('daily').setDescription("Récupère tes dividendes quotidiens (Points gratuits)"),
+    new SlashCommandBuilder().setName('leaderboard').setDescription("Affiche le Top 10 des membres les plus riches de la famille"),
+    new SlashCommandBuilder().setName('settitle').setDescription("Change ton titre sur ton /profil").addStringOption(opt => opt.setName('titre').setDescription("Ton nouveau titre").setRequired(true)),
     
     // 🏢 BUSINESS & INVESTISSEMENTS
-    new SlashCommandBuilder().setName('boutique').setDescription('Affiche la liste des bâtiments et entreprises disponibles à l\'achat'),
-    new SlashCommandBuilder().setName('acheter').setDescription('Acheter un bâtiment pour générer des points automatiquement')
-        .addStringOption(opt => opt.setName('id').setDescription('L\'ID du bâtiment (serveur, bunker, casino, syndicat)').setRequired(true)),
-    new SlashCommandBuilder().setName('investir').setDescription('Placer des points en bourse / crypto (Risque de gain ou de perte !)')
-        .addIntegerOption(opt => opt.setName('montant').setDescription('Montant à investir').setRequired(true)),
-    new SlashCommandBuilder().setName('recolter').setDescription('Récolter les points générés par tes entreprises et bâtiments achetés'),
+    new SlashCommandBuilder().setName('boutique').setDescription("Affiche la liste des bâtiments et entreprises disponibles à l'achat"),
+    new SlashCommandBuilder().setName('acheter').setDescription("Acheter un bâtiment pour générer des points automatiquement")
+        .addStringOption(opt => opt.setName('id').setDescription("L'ID du bâtiment (serveur, bunker, casino, syndicat)").setRequired(true)),
+    new SlashCommandBuilder().setName('investir').setDescription("Placer des points en bourse / crypto (Risque de gain ou de perte !)")
+        .addIntegerOption(opt => opt.setName('montant').setDescription("Montant à investir").setRequired(true)),
+    new SlashCommandBuilder().setName('recolter').setDescription("Récolter les points générés par tes entreprises et bâtiments achetés"),
 
     // 🎰 CASINO
-    new SlashCommandBuilder().setName('slots').setDescription('Machine à sous : aligne les symboles pour le Jackpot !').addIntegerOption(opt => opt.setName('mise').setDescription('Montant à miser').setRequired(true)),
-    new SlashCommandBuilder().setName('coinflip').setDescription('Double ou quitte sur un lancer de pièce').addStringOption(opt => opt.setName('choix').setDescription('pile ou face').setRequired(true).addChoices({name:'Pile', value:'pile'}, {name:'Face', value:'face'})).addIntegerOption(opt => opt.setName('mise').setDescription('Mise').setRequired(true)),
-    new SlashCommandBuilder().setName('roulette').setDescription('Mise sur une couleur au casino (Rouge x2, Noir x2, Vert x14)').addStringOption(opt => opt.setName('couleur').setDescription('Rouge, Noir ou Vert').setRequired(true).addChoices({name:'Rouge (x2)', value:'rouge'}, {name:'Noir (x2)', value:'noir'}, {name:'Vert (x14)', value:'vert'})).addIntegerOption(opt => opt.setName('mise').setDescription('Mise').setRequired(true)),
+    new SlashCommandBuilder().setName('slots').setDescription("Machine à sous : aligne les symboles pour le Jackpot !").addIntegerOption(opt => opt.setName('mise').setDescription("Montant à miser").setRequired(true)),
+    new SlashCommandBuilder().setName('coinflip').setDescription("Double ou quitte sur un lancer de pièce").addStringOption(opt => opt.setName('choix').setDescription("pile ou face").setRequired(true).addChoices({name:'Pile', value:'pile'}, {name:'Face', value:'face'})).addIntegerOption(opt => opt.setName('mise').setDescription("Mise").setRequired(true)),
+    new SlashCommandBuilder().setName('roulette').setDescription("Mise sur une couleur au casino (Rouge x2, Noir x2, Vert x14)").addStringOption(opt => opt.setName('couleur').setDescription("Rouge, Noir ou Vert").setRequired(true).addChoices({name:'Rouge (x2)', value:'rouge'}, {name:'Noir (x2)', value:'noir'}, {name:'Vert (x14)', value:'vert'})).addIntegerOption(opt => opt.setName('mise').setDescription("Mise").setRequired(true)),
 
     // 🛡️ MODÉRATION
-    new SlashCommandBuilder().setName('kick').setDescription('Exclure un membre').addUserOption(opt => opt.setName('membre').setDescription('Le membre').setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription('Raison')),
-    new SlashCommandBuilder().setName('ban').setDescription('Bannir un membre').addUserOption(opt => opt.setName('membre').setDescription('Le membre').setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription('Raison')),
-    new SlashCommandBuilder().setName('mute').setDescription('Rendre muet temporairement (Staff)').addUserOption(opt => opt.setName('membre').setDescription('Le membre').setRequired(true)).addIntegerOption(opt => opt.setName('minutes').setDescription('Durée en minutes').setRequired(true)),
-    new SlashCommandBuilder().setName('unmute').setDescription('Retirer le mute d\'un membre (Staff)').addUserOption(opt => opt.setName('membre').setDescription('Le membre').setRequired(true)),
-    new SlashCommandBuilder().setName('clear').setDescription('Supprimer des messages en masse (Staff)').addIntegerOption(opt => opt.setName('nombre').setDescription('Nombre de messages (1-100)').setRequired(true)),
-    new SlashCommandBuilder().setName('warn').setDescription('Donner un avertissement officiel (Staff)').addUserOption(opt => opt.setName('membre').setDescription('Le membre').setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription('Raison')),
+    new SlashCommandBuilder().setName('kick').setDescription("Exclure un membre").addUserOption(opt => opt.setName('membre').setDescription("Le membre").setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription("Raison")),
+    new SlashCommandBuilder().setName('ban').setDescription("Bannir un membre").addUserOption(opt => opt.setName('membre').setDescription("Le membre").setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription("Raison")),
+    new SlashCommandBuilder().setName('mute').setDescription("Rendre muet temporairement (Staff)").addUserOption(opt => opt.setName('membre').setDescription("Le membre").setRequired(true)).addIntegerOption(opt => opt.setName('minutes').setDescription("Durée en minutes").setRequired(true)),
+    new SlashCommandBuilder().setName('unmute').setDescription("Retirer le mute d'un membre (Staff)").addUserOption(opt => opt.setName('membre').setDescription("Le membre").setRequired(true)),
+    new SlashCommandBuilder().setName('clear').setDescription("Supprimer des messages en masse (Staff)").addIntegerOption(opt => opt.setName('nombre').setDescription("Nombre de messages (1-100)").setRequired(true)),
+    new SlashCommandBuilder().setName('warn').setDescription("Donner un avertissement officiel (Staff)").addUserOption(opt => opt.setName('membre').setDescription("Le membre").setRequired(true)).addStringOption(opt => opt.setName('raison').setDescription("Raison")),
 
     // 🎭 HUMOUR & HACK
-    new SlashCommandBuilder().setName('hack').setDescription('Lancer un protocole de cyber-attaque destructeur sur un membre').addUserOption(opt => opt.setName('membre').setDescription('La victime').setRequired(true)),
-    new SlashCommandBuilder().setName('pourcentage').setDescription('Test de pourcentage d\'humour du clan (Gay, Furry, Gigachad...)')
-        .addStringOption(opt => opt.setName('type').setDescription('Le test à effectuer').setRequired(true)
+    new SlashCommandBuilder().setName('hack').setDescription("Lancer un protocole de cyber-attaque destructeur sur un membre").addUserOption(opt => opt.setName('membre').setDescription("La victime").setRequired(true)),
+    new SlashCommandBuilder().setName('pourcentage').setDescription("Test de pourcentage d'humour du clan (Gay, Furry, Gigachad...)")
+        .addStringOption(opt => opt.setName('type').setDescription("Le test à effectuer").setRequired(true)
             .addChoices({name: ' % Gay 🏳️‍🌈', value: 'gay'}, {name: ' % Furry 🐾', value: 'furry'}, {name: ' % Gigachad 🗿', value: 'gigachad'}, {name: ' % Traître 🐍', value: 'traitre'}))
-        .addUserOption(opt => opt.setName('membre').setDescription('Le membre à tester (optionnel)'))
+        .addUserOption(opt => opt.setName('membre').setDescription("Le membre à tester (optionnel)"))
 ].map(command => command.toJSON());
 
 client.once('ready', async () => {
     console.log(`[Kyotaru Family] Connecté : ${client.user.tag}`);
-    client.user.setActivity('Gérer l\'Empire Kyotaru 📈');
+    client.user.setActivity("Gérer l'Empire Kyotaru 📈");
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try {
         await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
@@ -100,7 +100,6 @@ client.on('interactionCreate', async interaction => {
 
     const { commandName, options, user, guild, member } = interaction;
 
-    // Initialisation des structures de données pour éviter tout crash 'undefined'
     if (!bdd.points[user.id]) bdd.points[user.id] = 100; 
     if (!bdd.profil[user.id]) bdd.profil[user.id] = { titre: "Actionnaire Kyotaru 🪙", dailyCooldown: 0, warns: 0 };
     if (!bdd.entreprises[user.id]) bdd.entreprises[user.id] = { serveur: 0, bunker: 0, casino: 0, syndicat: 0 };
@@ -109,14 +108,14 @@ client.on('interactionCreate', async interaction => {
     // 📖 COMMANDE HELP
     if (commandName === 'help') {
         const embedHelp = new EmbedBuilder()
-            .setTitle('📖 GUIDE DES COMMANDES - KYOTARU FAMILY')
-            .setDescription('Voici l\'intégralité des outils mis à ta disposition pour fonder ton empire et régner sur l\'économie.')
+            .setTitle("📖 GUIDE DES COMMANDES - KYOTARU FAMILY")
+            .setDescription("Voici l'intégralité des outils mis à ta disposition pour fonder ton empire et régner sur l'économie.")
             .setColor('#34495e')
             .addFields(
                 { name: '🪙 Économie & Empire', value: '`/profil` • `/points` • `/daily` • `/leaderboard` • `/settitle`', inline: false },
                 { name: '🏢 Business & Entreprises', value: '`/boutique` • `/acheter` • `/investir` • `/recolter`', inline: false },
                 { name: '🎰 Casino Impérial', value: '`/slots` • `/coinflip` • `/roulette`', inline: false },
-                { name: '🎭 Tests & Cyber-Attaque', value: '`/hack` • `/pourcentage`', inline: false },
+                { name: '🎭 Humour & Hack', value: '`/hack` • `/pourcentage`', inline: false },
                 { name: '🛡️ Gestion du Personnel (Staff)', value: '`/annonce` • `/warn` • `/mute` • `/unmute` • `/clear` • `/kick` • `/ban` • `/setpoints`', inline: false }
             ).setTimestamp();
         return interaction.reply({ embeds: [embedHelp] });
@@ -140,7 +139,6 @@ client.on('interactionCreate', async interaction => {
         const pts = bdd.points[cible.id] || 0;
         const data = bdd.profil[cible.id] || { titre: "Actionnaire Kyotaru 🪙", warns: 0 };
         
-        // Initialisation à la volée si la cible n'existe pas encore en BDD
         if (!bdd.entreprises[cible.id]) bdd.entreprises[cible.id] = { serveur: 0, bunker: 0, casino: 0, syndicat: 0 };
         const ent = bdd.entreprises[cible.id];
 
@@ -162,15 +160,15 @@ client.on('interactionCreate', async interaction => {
     // 🏬 BOUTIQUE IMMOBILIÈRE
     if (commandName === 'boutique') {
         const embedBoutique = new EmbedBuilder()
-            .setTitle('🏬 BOUTIQUE IMMOBILIÈRE & ENTREPRISES')
-            .setDescription('Achetez des structures pour générer des revenus passifs récoltables via la commande `/recolter`.')
+            .setTitle("🏬 BOUTIQUE IMMOBILIÈRE & ENTREPRISES")
+            .setDescription("Achetez des structures pour générer des revenus passifs récoltables via la commande `/recolter`.")
             .setColor('#2ecc71')
             .addFields(
                 { name: '💻 Serveur de Bot clandestin (ID: `serveur`)', value: `Prix: **500 pts** • Revenu: **+25 pts / heure**` },
                 { name: '🛡️ Bunker Kyotaru-Data (ID: `bunker`)', value: `Prix: **2000 pts** • Revenu: **+120 pts / heure**` },
                 { name: '🎰 Mini-Casino Kyotaru (ID: `casino`)', value: `Prix: **7500 pts** • Revenu: **+500 pts / heure**` },
                 { name: '👑 QG du Syndicat (ID: `syndicat`)', value: `Prix: **25000 pts** • Revenu: **+2000 pts / heure**` }
-            ).setFooter({ text: 'Pour acheter, faites /acheter <id>' });
+            ).setFooter({ text: "Pour acheter, faites /acheter <id>" });
         return interaction.reply({ embeds: [embedBoutique] });
     }
 
@@ -423,7 +421,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ content: "Annonce envoyée.", ephemeral: true });
 
         if (style === 'embed') {
-            const embed = new EmbedBuilder().setTitle('📢 NOTE DE LA DIRECTION').setDescription(messageAnnonce).setColor('#e74c3c').setTimestamp();
+            const embed = new EmbedBuilder().setTitle("📢 NOTE DE LA DIRECTION").setDescription(messageAnnonce).setColor('#e74c3c').setTimestamp();
             return interaction.channel.send({ embeds: [embed] });
         } else {
             return interaction.channel.send(`📢 **Annonce importante :**\n\n${messageAnnonce}`);
@@ -463,8 +461,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 // Anti-crash global
-process.on('unhandledRejection', (reason) => console.error('⚠️ Rejet non géré :', reason));
-process.on('uncaughtException', (err) => console.error('⚠️ Exception non capturée :', err));
+process.on('unhandledRejection', (reason) => console.error("⚠️ Rejet non géré :", reason));
+process.on('uncaughtException', (err) => console.error("⚠️ Exception non capturée :", err));
 
 client.login(process.env.TOKEN);
-
