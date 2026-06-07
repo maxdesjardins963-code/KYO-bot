@@ -60,7 +60,7 @@ const commands = [];
 const funCommands = [
     new SlashCommandBuilder().setName('meme').setDescription('Affiche un même légendaire du web'),
     new SlashCommandBuilder().setName('joke').setDescription('Raconte une blague hilarante'),
-    new SlashCommandBuilder().setName('8ball').setDescription('Pose une question existencielle à l\'oracle').addStringOption(o=>o.setName('question').setDescription('Ta question').setRequired(true)),
+    new SlashCommandBuilder().setName('8ball').setDescription('Pose une question existentielle à l\'oracle').addStringOption(o=>o.setName('question').setDescription('Ta question').setRequired(true)),
     new SlashCommandBuilder().setName('ship').setDescription('Calcule le taux d\'amour entre deux membres').addUserOption(o=>o.setName('u1').setDescription('Premier utilisateur').setRequired(true)).addUserOption(o=>o.setName('u2').setDescription('Deuxième utilisateur').setRequired(true)),
     new SlashCommandBuilder().setName('gayrate').setDescription('Calcule le pourcentage de cutitude/gayrate d\'un membre').addUserOption(o=>o.setName('cible').setDescription('Le membre')),
     new SlashCommandBuilder().setName('iq').setDescription('Mesure le QI secret de quelqu\'un').addUserOption(o=>o.setName('cible').setDescription('Le membre')),
@@ -93,7 +93,7 @@ const adminAbuseCommands = [
     new SlashCommandBuilder().setName('ghostping').setDescription('[ABUSE] Mentionne discrètement quelqu\'un et supprime la preuve').addUserOption(o=>o.setName('cible').setDescription('La cible').setRequired(true))
 ];
 
-// 4. SYSTÈME ÉCONOMIE RÉVOLUTIONNAIRE & VISUEL (10 subcommands/commands)
+// 4. SYSTÈME ÉCONOMIE RÉVOLUTIONNAIRE & VISUEL
 const ecoCommands = [
     new SlashCommandBuilder().setName('eco').setDescription('Système bancaire et financier Kyotaru')
         .addSubcommand(s=>s.setName('balance').setDescription('Affiche ton compte bancaire 3D visuel').addUserOption(o=>o.setName('cible').setDescription('Le membre')))
@@ -190,7 +190,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (commandName === 'hack') {
-        const target = options.options ? options.getUser('cible') : null;
+        const target = options.getUser('cible');
         await interaction.reply(`💻 Initialisation de l'exploit sur **${target.username}**...`);
         const logs = [`📡 Récupération de l'adresse IP locale...`, `📂 Extraction du dossier Roblox & Discord tokens...`, `👾 Injection du malware Kyotaru...`, `🏴‍☠️ Piratage terminé ! Compte vendu pour 0.50$.`];
         for (const log of logs) {
@@ -211,7 +211,7 @@ client.on('interactionCreate', async interaction => {
         const target = options.getUser('cible');
         const roasts = ["Ton secret de beauté ? Le filtre flou.", "Tu es la raison pour laquelle les notices d'utilisation existent.", "Je parierais bien que ton QI ne dépasse pas ton niveau Roblox."];
         const emb = new EmbedBuilder().setColor(CONFIG.color).setDescription(`🔥 **${target.username}**, encaisse ça : ${roasts[Math.floor(Math.random()*roasts.length)]}`);
-        return interaction.reply({ embeds: [embed] });
+        return interaction.reply({ embeds: [emb] });
     }
 
     if (commandName === 'ppsize') {
@@ -221,9 +221,9 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- EXECUTION : CATÉGORIE ADMIN FUN (Vérification des permissions) ---
-    const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
+    const geopoliticalAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
 
-    if (['gstart', 'greroll', 'sayembed', 'poll', 'ticketsetup', 'annonce', 'slowmode', 'lock', 'unlock', 'nuke'].includes(commandName) && !isAdmin) {
+    if (['gstart', 'greroll', 'sayembed', 'poll', 'ticketsetup', 'annonce', 'slowmode', 'lock', 'unlock', 'nuke'].includes(commandName) && !geopoliticalAdmin) {
         return interaction.reply({ content: "❌ Tu n'es pas assez puissant (Pas Administrateur) pour exécuter cette commande !", ephemeral: true });
     }
 
@@ -303,7 +303,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- EXECUTION : CATÉGORIE ADMIN ABUSE FUN (Réservé aux admins) ---
-    if (['fakeban', 'stealcoins', 'spamdm', 'forceprofile', 'ghostping'].includes(commandName) && !isAdmin) {
+    if (['fakeban', 'stealcoins', 'spamdm', 'forceprofile', 'ghostping'].includes(commandName) && !geopoliticalAdmin) {
         return interaction.reply({ content: "❌ Tentative d'abuse bloquée. Vous devez posséder la couronne d'Admin !", ephemeral: true });
     }
 
@@ -349,8 +349,7 @@ client.on('interactionCreate', async interaction => {
         if (sub === 'balance') {
             const target = options.getUser('cible') || user; const tData = getUserData(target.id);
             const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle(`🏦 COMPTE FINANCIER • ${target.username}`)
-                .setDescription(````🖥️ ETAT DES COMPTES INFORMATISÉS
-```\n💵 **Portefeuille :** \`${tData.coins} ${cur}\`\n💳 **Banque Sécurisée :** \`${tData.bank} ${cur}\`\n💎 **Crypto Assets :** \`${tData.crypto} K-Coin\``)
+                .setDescription(`\`\`\`🖥️ ETAT DES COMPTES INFORMATISÉS\`\`\`\n💵 **Portefeuille :** \`${tData.coins} ${cur}\`\n💳 **Banque Sécurisée :** \`${tData.bank} ${cur}\`\n💎 **Crypto Assets :** \`${tData.crypto} K-Coin\``)
                 .setFooter({text: CONFIG.footer});
             return interaction.reply({ embeds: [emb] });
         }
@@ -422,13 +421,12 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply("🎉 Achat confirmé de l'infrastructure Cloud !");
             } else if (id === 2 && dbData.coins >= 10000) {
                 updateUserData(user.id, 'coins', dbData.coins - 10000); updateUserData(user.id, 'inventory', [...dbData.inventory, "🚀 Fusée Privée"]);
-                return interaction.reply("🎉 Incroyable ! Tu possèdes désormais ta propre fusée !");
+                return interaction.reply("🎉 Incroyable ! Tu possendes désormais ta propre fusée !");
             }
             return interaction.reply({content: "ID invalide ou fonds insuffisants.", ephemeral: true});
         }
 
         if (sub === 'crypto') {
-            // Algorithme de fluctuation dynamique basé sur les minutes de l'heure actuelle
             const price = Math.floor(Math.abs(Math.sin(new Date().getMinutes()) * 1500)) + 200;
             const emb = new EmbedBuilder().setColor("#00FF66").setTitle('📈 MARCHÉ DE LA CRYPTO (KyotoCoin)')
                 .setDescription(`📊 Cours actuel : **${price} ${cur} / K-Coin**\n\n*Le prix change toutes les minutes de manière totalement chaotique et révolutionnaire !*`);
@@ -440,7 +438,7 @@ client.on('interactionCreate', async interaction => {
     if (commandName === 'profile') {
         const target = options.getUser('cible') || user; const tData = getUserData(target.id);
         const xpNeeded = tData.level * tData.level * 100;
-        const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle(`👤 DOSSIER CITOYEN • ${target.username}`)
+        const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle('👤 DOSSIER CITOYEN')
             .setThumbnail(target.displayAvatarURL({dynamic:true}))
             .addFields(
                 { name: '✨ Classement Niveau', value: `\`Niveau ${tData.level}\` (${tData.xp}/${xpNeeded} XP)`, inline: true },
@@ -492,7 +490,7 @@ client.on('messageCreate', async message => {
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton() || interaction.customId !== 'tk_create') return;
     const chan = await interaction.guild.channels.create({
-        name: `🎫-ticket-${interaction.user.username}`,
+        name: `ticket-${interaction.user.username}`,
         type: ChannelType.GuildText,
         permissionOverwrites: [
             { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
