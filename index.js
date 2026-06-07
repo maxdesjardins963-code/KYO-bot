@@ -1,20 +1,20 @@
 require('dotenv').config();
-const http = require('http'); // Module natif pour créer le serveur web
+const http = require('http'); // Module natif pour le serveur web gratuit de Render
 const { 
-    Client, GatewayIntentBits, Collection, EmbedBuilder, REST, Routes, 
+    Client, GatewayIntentBits, EmbedBuilder, REST, Routes, 
     SlashCommandBuilder, ChannelType, PermissionFlagsBits, ActionRowBuilder, 
     ButtonBuilder, ButtonStyle, ActivityType 
 } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 
-// --- MINI SERVEUR POUR LEURRER RENDER (GRATUIT) ---
+// --- MINI SERVEUR POUR LEURRER RENDER (100% GRATUIT) ---
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Bot Kyo Family en ligne ! 🚀');
+    res.end('Bot Kyo Family en ligne et actif ! 🚀');
 }).listen(PORT, () => {
-    console.log(`📡 Serveur de contournement Render activé sur le port ${PORT}`);
+    console.log(`📡 Leurre Render activé sur le port ${PORT}`);
 });
 
 // --- INITIALISATION DU CLIENT DISCORD ---
@@ -63,12 +63,9 @@ function updateUserData(userId, key, value) {
     writeDB(db);
 }
 
-// --- STRUCTURE DES COMMANDES ULTIMES ---
-const commands = [];
-
-// 1. COMMANDES FUN TRÈS MODERNES (10)
+// --- CONFIGURATION DES COMMANDES ---
 const funCommands = [
-    new SlashCommandBuilder().setName('meme').setDescription('Affiche un même légendaire du web'),
+    new SlashCommandBuilder().setName('meme').setDescription('Affiche un mème légendaire du web'),
     new SlashCommandBuilder().setName('joke').setDescription('Raconte une blague hilarante'),
     new SlashCommandBuilder().setName('8ball').setDescription('Pose une question existentielle à l\'oracle').addStringOption(o=>o.setName('question').setDescription('Ta question').setRequired(true)),
     new SlashCommandBuilder().setName('ship').setDescription('Calcule le taux d\'amour entre deux membres').addUserOption(o=>o.setName('u1').setDescription('Premier utilisateur').setRequired(true)).addUserOption(o=>o.setName('u2').setDescription('Deuxième utilisateur').setRequired(true)),
@@ -80,7 +77,6 @@ const funCommands = [
     new SlashCommandBuilder().setName('ppsize').setDescription('Mesure la taille de l\'appareil de quelqu\'un').addUserOption(o=>o.setName('cible').setDescription('Le membre'))
 ];
 
-// 2. COMMANDES ADMIN FUN (10)
 const adminFunCommands = [
     new SlashCommandBuilder().setName('gstart').setDescription('Lance un giveaway de manière stylée').addStringOption(o=>o.setName('lot').setDescription('Le lot').setRequired(true)).addIntegerOption(o=>o.setName('duree').setDescription('Durée en minutes').setRequired(true)),
     new SlashCommandBuilder().setName('greroll').setDescription('Tire un nouveau gagnant pour un giveaway').addStringOption(o=>o.setName('message_id').setDescription('ID du message du giveaway').setRequired(true)),
@@ -94,7 +90,6 @@ const adminFunCommands = [
     new SlashCommandBuilder().setName('nuke').setDescription('Explose et recrée proprement le salon actuel pour effacer les fantômes')
 ];
 
-// 3. COMMANDES ADMIN ABUSE FUN (5)
 const adminAbuseCommands = [
     new SlashCommandBuilder().setName('fakeban').setDescription('[ABUSE] Simule un faux bannissement hyper réaliste').addUserOption(o=>o.setName('cible').setDescription('La victime').setRequired(true)),
     new SlashCommandBuilder().setName('stealcoins').setDescription('[ABUSE] Récupère secrètement tout l\'argent d\'un joueur').addUserOption(o=>o.setName('cible').setDescription('La cible').setRequired(true)),
@@ -103,10 +98,9 @@ const adminAbuseCommands = [
     new SlashCommandBuilder().setName('ghostping').setDescription('[ABUSE] Mentionne discrètement quelqu\'un et supprime la preuve').addUserOption(o=>o.setName('cible').setDescription('La cible').setRequired(true))
 ];
 
-// 4. SYSTÈME ÉCONOMIE RÉVOLUTIONNAIRE & VISUEL
 const ecoCommands = [
     new SlashCommandBuilder().setName('eco').setDescription('Système bancaire et financier Kyotaru')
-        .addSubcommand(s=>s.setName('balance').setDescription('Affiche ton compte bancaire 3D visuel').addUserOption(o=>o.setName('cible').setDescription('Le membre')))
+        .addSubcommand(s=>s.setName('balance').setDescription('Affiche ton compte bancaire visuel').addUserOption(o=>o.setName('cible').setDescription('Le membre')))
         .addSubcommand(s=>s.setName('daily').setDescription('Récupère tes dividendes quotidiens'))
         .addSubcommand(s=>s.setName('work').setDescription('Travaille pour une grande corporation'))
         .addSubcommand(s=>s.setName('crime').setDescription('Tente une action illégale à haut rendement'))
@@ -114,27 +108,25 @@ const ecoCommands = [
         .addSubcommand(s=>s.setName('deposit').setDescription('Sécurise tes pièces à la banque').addIntegerOption(o=>o.setName('montant').setDescription('Montant à déposer').setRequired(true)))
         .addSubcommand(s=>s.setName('withdraw').setDescription('Retire tes fonds de la banque').addIntegerOption(o=>o.setName('montant').setDescription('Montant à retirer').setRequired(true)))
         .addSubcommand(s=>s.setName('shop').setDescription('Magasin des industries et des cryptos'))
-        .addSubcommand(s=>s.setName('buy').setDescription('Investis dans une entreprise ou un item de la boutique').addIntegerOption(o=>o.setName('id').setDescription('ID de l\'achat').setRequired(true)))
-        .addSubcommand(s=>s.setName('crypto').setDescription('Visualise le cours fluctuant de la KyotoCoin et spécule'))
+        .addSubcommand(s=>s.setName('buy').setDescription('Investis dans une entreprise ou un item').addIntegerOption(o=>o.setName('id').setDescription('ID de l\'achat').setRequired(true)))
+        .addSubcommand(s=>s.setName('crypto').setDescription('Visualise le cours fluctuant de la KyotoCoin'))
 ];
 
-// 5. COMMANDES UTILITAIRES & PROFIL
 const utilCommands = [
     new SlashCommandBuilder().setName('profile').setDescription('Affiche ta carte d\'identité complète (XP/Éco)').addUserOption(o=>o.setName('cible').setDescription('Le membre')),
     new SlashCommandBuilder().setName('avatar').setDescription('Affiche la photo de profil d\'un utilisateur').addUserOption(o=>o.setName('cible').setDescription('Le membre')),
     new SlashCommandBuilder().setName('serverinfo').setDescription('Donne l\'état et la puissance du serveur')
 ];
 
-// Fusion globale dans le registre
 const allCommands = [...funCommands, ...adminFunCommands, ...adminAbuseCommands, ...ecoCommands, ...utilCommands];
 
-// --- PRÉPARATION DU LARGAGE SUR L'API DISCORD ---
+// --- ENREGISTREMENT SÉCURISÉ DES COMMANDES ---
 client.once('ready', async () => {
     console.log(`🎁 ${client.user.tag} est connecté avec succès !`);
     client.user.setActivity('Ambiancer la Kyotaru Family', { type: ActivityType.Competing });
 
     if (!process.env.CLIENT_ID || !process.env.TOKEN) {
-        console.error("❌ ERREUR CRITIQUE : Le CLIENT_ID ou le TOKEN est manquant dans l'environnement Render !");
+        console.error("❌ ERREUR SÉCURITÉ : CLIENT_ID ou TOKEN manquant dans le tableau de bord Render !");
         return;
     }
 
@@ -145,13 +137,13 @@ client.once('ready', async () => {
             Routes.applicationCommands(process.env.CLIENT_ID),
             { body: allCommands.map(c => c.toJSON()) }
         );
-        console.log('✅ Toutes les commandes sont synchronisées et disponibles !');
+        console.log('✅ Toutes les commandes sont synchronisées et utilisables !');
     } catch (err) {
         console.error("❌ Erreur lors de la synchronisation des commandes :", err);
     }
 });
 
-// --- LOGIQUE MAITRESSE D'EXÉCUTION DES INTERACTIONS ---
+// --- GESTIONNAIRE COMPLET DES INTERACTIONS ---
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -159,7 +151,7 @@ client.on('interactionCreate', async interaction => {
     const dbData = getUserData(user.id);
     const cur = CONFIG.currency;
 
-    // --- EXECUTION : CATÉGORIE FUN ---
+    // --- FUN ---
     if (commandName === 'meme') {
         const memes = [
             "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExM3BwZzVleWptZzFmYWp2dnE3M3h4dmptbWlzbXN5dzF5cm94bzhidCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/NEvPzZ8bd1V4Y/giphy.gif",
@@ -207,9 +199,9 @@ client.on('interactionCreate', async interaction => {
     if (commandName === 'hack') {
         const target = options.getUser('cible');
         await interaction.reply(`💻 Initialisation de l'exploit sur **${target.username}**...`);
-        const logs = [`📡 Récupération de l'adresse IP locale...`, `📂 Extraction du dossier Roblox & Discord tokens...`, `👾 Injection du malware Kyotaru...`, `🏴‍☠️ Piratage terminé ! Compte vendu pour 0.50$.`];
+        const logs = [`📡 Récupération de l'adresse IP locale...`, `📂 Extraction du dossier Roblox & Discord tokens...`, `👾 Injection du malware Kyotaru...`, `🏴‍☠️ Piratage terminé ! Compte revendu.`];
         for (const log of logs) {
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 1200));
             await interaction.editReply(log);
         }
         return;
@@ -235,13 +227,13 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [emb] });
     }
 
-    // --- EXECUTION : CATÉGORIE ADMIN FUN ---
+    // --- SECU ADMIN ---
     const geopoliticalAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
-
-    if (['gstart', 'greroll', 'sayembed', 'poll', 'ticketsetup', 'annonce', 'slowmode', 'lock', 'unlock', 'nuke'].includes(commandName) && !geopoliticalAdmin) {
-        return interaction.reply({ content: "❌ Tu n'es pas assez puissant (Pas Administrateur) pour exécuter cette commande !", ephemeral: true });
+    if (['gstart', 'greroll', 'sayembed', 'poll', 'ticketsetup', 'annonce', 'slowmode', 'lock', 'unlock', 'nuke', 'fakeban', 'stealcoins', 'spamdm', 'forceprofile', 'ghostping'].includes(commandName) && !geopoliticalAdmin) {
+        return interaction.reply({ content: "❌ Tu n'as pas la permission d'Administrateur pour exécuter cette commande !", ephemeral: true });
     }
 
+    // --- ADMIN FUN ---
     if (commandName === 'gstart') {
         const prize = options.getString('lot'); const time = options.getInteger('duree');
         const emb = new EmbedBuilder().setColor(CONFIG.adminColor).setTitle('🎉 GIVEAWAY KYOTARU 🎉').setDescription(`🎁 Lot : **${prize}**\n⏳ Durée : **${time} minute(s)**\n\n*Réagissez avec 🎉 pour tenter votre chance !*`);
@@ -300,7 +292,7 @@ client.on('interactionCreate', async interaction => {
 
     if (commandName === 'lock') {
         await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
-        return interaction.reply('🔒 Le salon a été verrouillé par la force administrative !');
+        return interaction.reply('🔒 Le salon a été verrouillé !');
     }
 
     if (commandName === 'unlock') {
@@ -313,118 +305,114 @@ client.on('interactionCreate', async interaction => {
         const newChan = await channel.clone();
         await channel.delete();
         await newChan.setPosition(pos);
-        const emb = new EmbedBuilder().setColor(CONFIG.adminColor).setDescription("💥 Salon purifié par explosion nucléaire ! Nettoyage réussi.");
+        const emb = new EmbedBuilder().setColor(CONFIG.adminColor).setDescription("💥 Salon purifié par explosion numérique ! Nettoyage réussi.");
         return newChan.send({ embeds: [emb] });
     }
 
-    // --- EXECUTION : CATÉGORIE ADMIN ABUSE FUN ---
-    if (['fakeban', 'stealcoins', 'spamdm', 'forceprofile', 'ghostping'].includes(commandName) && !geopoliticalAdmin) {
-        return interaction.reply({ content: "❌ Tentative d'abuse bloquée. Vous devez posséder la couronne d'Admin !", ephemeral: true });
-    }
-
+    // --- ADMIN ABUSE ---
     if (commandName === 'fakeban') {
         const target = options.getUser('cible');
-        const emb = new EmbedBuilder().setColor("#FF0000").setTitle('🛑 BAN BAN BAN').setDescription(`🚨 **${target.username}** a été banni définitivement de la Kyotaru Family pour : *Raison Secrète d'Etat*.`);
+        const emb = new EmbedBuilder().setColor("#FF0000").setTitle('🛑 BAN DEFINITIF').setDescription(`🚨 **${target.username}** a été exclu définitivement de la Kyotaru Family.`);
         await interaction.reply({ embeds: [emb] });
         await new Promise(r => setTimeout(r, 4000));
-        return interaction.followUp({ content: `😜 Alerte troll ! C'était un faux ban pour **${target.username}**.` });
+        return interaction.followUp({ content: `😜 C'était un faux ban pour rigoler !` });
     }
 
     if (commandName === 'stealcoins') {
         const target = options.getUser('cible'); const tData = getUserData(target.id);
         const loot = tData.coins;
         updateUserData(target.id, 'coins', 0); updateUserData(user.id, 'coins', dbData.coins + loot);
-        return interaction.reply({ content: `😈 [ABUSE] Tu as siphonné la totalité des économies de **${target.username}** (${loot} ${cur}) ! Chut, c'est secret...`, ephemeral: true });
+        return interaction.reply({ content: `😈 [ABUSE] Tu as siphonné la totalité des économies de **${target.username}** (${loot} ${cur}) !`, ephemeral: true });
     }
 
     if (commandName === 'spamdm') {
         const target = options.getUser('cible'); const txt = options.getString('texte');
-        await interaction.reply({ content: "Spam lancé en sous-marin !", ephemeral: true });
-        for(let i=0; i<5; i++) { await target.send(`⚠️ **MESSAGE IMPORTANT DE L'ADMINISTRATION :** ${txt}`).catch(()=>{}); }
+        await interaction.reply({ content: "Spam lancé en DM !", ephemeral: true });
+        for(let i=0; i<5; i++) { await target.send(`⚠️ **ALERTE ADMIN :** ${txt}`).catch(()=>{}); }
         return;
     }
 
     if (commandName === 'forceprofile') {
         const target = options.getUser('cible'); const lvl = options.getInteger('level');
         updateUserData(target.id, 'level', lvl); updateUserData(target.id, 'xp', 0);
-        return interaction.reply({ content: `✨ Modification divine : **${target.username}** est maintenant propulsé au **Niveau ${lvl}**.` });
+        return interaction.reply({ content: `✨ **${target.username}** est maintenant propulsé au **Niveau ${lvl}**.` });
     }
 
     if (commandName === 'ghostping') {
         const target = options.getUser('cible');
-        await interaction.reply({ content: "Ghostping envoyé avec succès !", ephemeral: true });
+        await interaction.reply({ content: "Ghostping exécuté !", ephemeral: true });
         const m = await channel.send(`<@${target.id}>`);
         return m.delete();
     }
 
-    // --- EXECUTION : CATÉGORIE ÉCONOMIE ---
+    // --- ECONOMIE ---
     if (commandName === 'eco') {
         const sub = options.getSubcommand();
 
         if (sub === 'balance') {
             const target = options.getUser('cible') || user; const tData = getUserData(target.id);
             const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle(`🏦 COMPTE FINANCIER • ${target.username}`)
-                .setDescription(`\`\`\`🖥️ ETAT DES COMPTES INFORMATISÉS\`\`\`\n💵 **Portefeuille :** \`${tData.coins} ${cur}\`\n💳 **Banque Sécurisée :** \`${tData.bank} ${cur}\`\n💎 **Crypto Assets :** \`${tData.crypto} K-Coin\``)
+                .setDescription(`\`🖥️ ETAT DES COMPTES INFORMATISÉS\`\n\n💵 **Portefeuille :** \`${tData.coins} ${cur}\`\n💳 **Banque Sécurisée :** \`${tData.bank} ${cur}\`\n💎 **Crypto Assets :** \`${tData.crypto} K-Coin\``)
                 .setFooter({text: CONFIG.footer});
             return interaction.reply({ embeds: [emb] });
         }
 
         if (sub === 'daily') {
-            if (Date.now() - dbData.lastDaily < 86400000) return interaction.reply({content: "⏱️ Revenez demain pour réclamer vos actions !", ephemeral: true});
+            if (Date.now() - dbData.lastDaily < 86400000) return interaction.reply({content: "⏱️ Revenez demain pour réclamer vos récompenses !", ephemeral: true});
             updateUserData(user.id, 'coins', dbData.coins + 500); updateUserData(user.id, 'lastDaily', Date.now());
             return interaction.reply(`🎁 Vous avez encaissé vos dividendes quotidiens de **500 ${cur}** !`);
         }
 
         if (sub === 'work') {
-            if (Date.now() - dbData.lastWork < 3600000) return interaction.reply({content: "⏱️ Vos muscles se reposent. Attendez 1 heure !", ephemeral: true});
+            if (Date.now() - dbData.lastWork < 3600000) return interaction.reply({content: "⏱️ Laisse tes muscles se reposer. Attends 1 heure !", ephemeral: true});
             const pay = Math.floor(Math.random()*151)+100;
             updateUserData(user.id, 'coins', dbData.coins + pay); updateUserData(user.id, 'lastWork', Date.now());
-            return interaction.reply(`💼 Contrat rempli ! Votre entreprise vous verse **${pay} ${cur}**.`);
+            return interaction.reply(`💼 Contrat rempli ! Ton job te rapporte **${pay} ${cur}**.`);
         }
 
         if (sub === 'crime') {
-            if (Date.now() - dbData.lastCrime < 7200000) return interaction.reply({content: "🚨 La police patrouille encore, attends 2 heures !", ephemeral: true});
+            if (Date.now() - dbData.lastCrime < 7200000) return interaction.reply({content: "🚨 La police tourne encore, attends 2 heures !", ephemeral: true});
             const success = Math.random() > 0.45;
             updateUserData(user.id, 'lastCrime', Date.now());
             if (success) {
                 const loot = Math.floor(Math.random()*400)+200; updateUserData(user.id, 'coins', dbData.coins + loot);
-                return interaction.reply(`🥷 **Grand Succès !** Tu as braqué un convoi de données et récupéré **${loot} ${cur}** !`);
+                return interaction.reply(`🥷 **Grand Succès !** Tu as braqué une base de données et récupéré **${loot} ${cur}** !`);
             } else {
                 const lose = Math.floor(Math.random()*200)+50; updateUserData(user.id, 'coins', Math.max(0, dbData.coins - lose));
-                return interaction.reply(`👮 **Échec !** Tu t'es fait attraper par les pare-feux et as payé une amende de **${lose} ${cur}**.`);
+                return interaction.reply(`👮 **Échec !** Les pare-feux t'ont bloqué. Amende de **${lose} ${cur}**.`);
             }
         }
 
         if (sub === 'rob') {
             const target = options.getUser('cible'); const tData = getUserData(target.id);
-            if (tData.coins < 100) return interaction.reply({content: "La cible est trop pauvre, aucun intérêt !", ephemeral: true});
-            if (Date.now() - dbData.lastRob < 14400000) return interaction.reply({content: "Tu as déjà fait trop de bruit. Patiente 4h !", ephemeral: true});
+            if (tData.coins < 100) return interaction.reply({content: "La cible est trop pauvre !", ephemeral: true});
+            if (Date.now() - dbData.lastRob < 14400000) return interaction.reply({content: "Tu as fait trop de bruit, attends 4h !", ephemeral: true});
             
             updateUserData(user.id, 'lastRob', Date.now());
             if(Math.random() > 0.6) {
                 const loot = Math.floor(tData.coins * 0.25);
                 updateUserData(target.id, 'coins', tData.coins - loot); updateUserData(user.id, 'coins', dbData.coins + loot);
-                return interaction.reply(`🦹 Tu as détroussé **${target.username}** et lui as volé **${loot} ${cur}** en toute discrétion !`);
-            } else { return interaction.reply(`👟 **${target.username}** t'a repéré de loin ! Tu as dû fuir sans rien prendre.`); }
+                return interaction.reply(`🦹 Tu as détroussé **${target.username}** de **${loot} ${cur}** !`);
+            } else { return interaction.reply(`👟 **${target.username}** t'a vu arriver. Fuite immédiate !`); }
         }
 
         if (sub === 'deposit') {
             const amt = options.getInteger('montant');
             if(dbData.coins < amt) return interaction.reply({content: "Pas assez d'argent sur toi.", ephemeral: true});
             updateUserData(user.id, 'coins', dbData.coins - amt); updateUserData(user.id, 'bank', dbData.bank + amt);
-            return interaction.reply(`🏦 Coffre alimenté de **${amt} ${cur}** ! Protégé des voleurs.`);
+            return interaction.reply(`🏦 Coffre alimenté de **${amt} ${cur}** !`);
         }
 
         if (sub === 'withdraw') {
             const amt = options.getInteger('montant');
             if(dbData.bank < amt) return interaction.reply({content: "Fonds bancaires insuffisants.", ephemeral: true});
             updateUserData(user.id, 'bank', dbData.bank - amt); updateUserData(user.id, 'coins', dbData.coins + amt);
-            return interaction.reply(`💵 Retrait validé : **${amt} ${cur}** ajouté à ton portefeuille.`);
+            return interaction.reply(`💵 Retrait validé : **${amt} ${cur}** récupéré.`);
         }
 
         if (sub === 'shop') {
             const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle('🛒 INDUSTRIES & STOCKS KYOTARU')
-                .setDescription(`Investissez pour enrichir votre statut :\n\n👉 **[1] 🏢 Serveur Cloud Pro** — \`Price: 2000 ${cur}\` (Génère du prestige)\n👉 **[2] 🚀 Fusée Privée** — \`Price: 10000 ${cur}\` (Affiche sur le profil)`)
+                .setDescription(`Investis pour augmenter ton statut :\n\n👉 **[1] 🏢 Serveur Cloud Pro** — \`Prix: 2000 ${cur}\` (Génère du prestige)\n👉 **[2] 🚀 Fusée Privée** — \`Prix: 10000 ${cur}\` (Affiche sur ton profil)`)
                 .setFooter({text: CONFIG.footer});
             return interaction.reply({ embeds: [emb] });
         }
@@ -433,32 +421,32 @@ client.on('interactionCreate', async interaction => {
             const id = options.getInteger('id');
             if (id === 1 && dbData.coins >= 2000) {
                 updateUserData(user.id, 'coins', dbData.coins - 2000); updateUserData(user.id, 'inventory', [...dbData.inventory, "🏢 Serveur Cloud Pro"]);
-                return interaction.reply("🎉 Achat confirmé de l'infrastructure Cloud !");
+                return interaction.reply("🎉 Achat validé : Infrastructure Cloud Pro obtenue !");
             } else if (id === 2 && dbData.coins >= 10000) {
                 updateUserData(user.id, 'coins', dbData.coins - 10000); updateUserData(user.id, 'inventory', [...dbData.inventory, "🚀 Fusée Privée"]);
-                return interaction.reply("🎉 Incroyable ! Tu possendes désormais ta propre fusée !");
+                return interaction.reply("🎉 Incroyable ! Tu as acheté ta propre fusée privée !");
             }
-            return interaction.reply({content: "ID invalide ou fonds insuffisants.", ephemeral: true});
+            return interaction.reply({content: "ID incorrect ou fonds insuffisants.", ephemeral: true});
         }
 
         if (sub === 'crypto') {
             const price = Math.floor(Math.abs(Math.sin(new Date().getMinutes()) * 1500)) + 200;
-            const emb = new EmbedBuilder().setColor("#00FF66").setTitle('📈 MARCHÉ DE LA CRYPTO (KyotoCoin)')
-                .setDescription(`📊 Cours actuel : **${price} ${cur} / K-Coin**\n\n*Le prix change toutes les minutes de manière totalement chaotique et révolutionnaire !*`);
+            const emb = new EmbedBuilder().setColor("#00FF66").setTitle('📈 MARCHÉ CRYPTO (KyotoCoin)')
+                .setDescription(`📊 Cours actuel : **${price} ${cur} / K-Coin**\n\n*Évolution chaotique toutes les minutes !*`);
             return interaction.reply({ embeds: [emb] });
         }
     }
 
-    // --- EXECUTION : CATÉGORIE UTILITAIRES & PROFIL ---
+    // --- UTILITAIRES ---
     if (commandName === 'profile') {
         const target = options.getUser('cible') || user; const tData = getUserData(target.id);
         const xpNeeded = tData.level * tData.level * 100;
         const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle('👤 DOSSIER CITOYEN')
             .setThumbnail(target.displayAvatarURL({dynamic:true}))
             .addFields(
-                { name: '✨ Classement Niveau', value: `\`Niveau ${tData.level}\` (${tData.xp}/${xpNeeded} XP)`, inline: true },
-                { name: '💰 Valeur Nette', value: `\`${tData.coins + tData.bank} ${cur}\``, inline: true },
-                { name: '🎒 Assets & Propriétés', value: tData.inventory.length > 0 ? tData.inventory.map(i=>`• ${i}`).join('\n') : '*Aucun investissement*' }
+                { name: '✨ Niveau', value: `\`Niveau ${tData.level}\` (${tData.xp}/${xpNeeded} XP)`, inline: true },
+                { name: '💰 Fortune totale', value: `\`${tData.coins + tData.bank} ${cur}\``, inline: true },
+                { name: '🎒 Inventaire', value: tData.inventory.length > 0 ? tData.inventory.map(i=>`• ${i}`).join('\n') : '*Aucun item*' }
             );
         return interaction.reply({ embeds: [emb] });
     }
@@ -473,9 +461,9 @@ client.on('interactionCreate', async interaction => {
         const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle(`🏰 ${guild.name}`)
             .setThumbnail(guild.iconURL())
             .addFields(
-                { name: '👑 Fondateur', value: `<@${guild.ownerId}>`, inline: true },
-                { name: '👥 Citoyens', value: `${guild.memberCount}`, inline: true },
-                { name: '🌟 Puissance Boost', value: `${guild.premiumSubscriptionCount || 0}`, inline: true }
+                { name: '👑 Propriétaire', value: `<@${guild.ownerId}>`, inline: true },
+                { name: '👥 Membres', value: `${guild.memberCount}`, inline: true },
+                { name: '🌟 Boosts', value: `${guild.premiumSubscriptionCount || 0}`, inline: true }
             );
         return interaction.reply({ embeds: [emb] });
     }
@@ -494,7 +482,7 @@ client.on('messageCreate', async message => {
 
     if(newXp >= req) {
         newXp -= req; newLvl++;
-        const lvlEmb = new EmbedBuilder().setColor(CONFIG.color).setDescription(`🎉 **LEVEL UP !** ${message.author} grimpe au **Niveau ${newLvl}** ! ✨`);
+        const lvlEmb = new EmbedBuilder().setColor(CONFIG.color).setDescription(`🎉 **LEVEL UP !** ${message.author} passe **Niveau ${newLvl}** ! ✨`);
         message.channel.send({ embeds: [lvlEmb] }).then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
     }
     updateUserData(message.author.id, 'xp', newXp); updateUserData(message.author.id, 'level', newLvl);
@@ -512,12 +500,12 @@ client.on('interactionCreate', async interaction => {
             { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
         ]
     });
-    const emb = new EmbedBuilder().setColor(CONFIG.adminColor).setTitle('🎫 ASSISTANCE PRIVÉE').setDescription(`Bonjour ${interaction.user}, expose ton problème ici, un membre de la Kyotaru Family va te répondre.`);
+    const emb = new EmbedBuilder().setColor(CONFIG.adminColor).setTitle('🎫 ASSISTANCE PRIVÉE').setDescription(`Bonjour ${interaction.user}, pose tes questions ici. Un admin va te répondre.`);
     await chan.send({ embeds: [emb] });
-    return interaction.reply({ content: `✅ Ton salon privé est ouvert ici : ${chan}`, ephemeral: true });
+    return interaction.reply({ content: `✅ Ton ticket a été créé ici : ${chan}`, ephemeral: true });
 });
 
-// --- FILETS DE SÉCURITÉ (ANTI-CRASH) ---
+// --- FILETS DE SÉCURITÉ ULTRA-IMPORTANT (ANTI-CRASH) ---
 process.on('unhandledRejection', (reason, p) => console.error('🛡️ Anti-Crash détecté et bloqué :', reason));
 process.on('uncaughtException', (err, origin) => console.error('🛡️ Exception fatale bloquée :', err));
 
