@@ -1,4 +1,5 @@
 require('dotenv').config();
+const http = require('http'); // Module natif pour créer le serveur web
 const { 
     Client, GatewayIntentBits, Collection, EmbedBuilder, REST, Routes, 
     SlashCommandBuilder, ChannelType, PermissionFlagsBits, ActionRowBuilder, 
@@ -7,7 +8,16 @@ const {
 const fs = require('fs');
 const path = require('path');
 
-// --- INITIALISATION DU CLIENT ---
+// --- MINI SERVEUR POUR LEURRER RENDER (GRATUIT) ---
+const PORT = process.env.PORT || 10000;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot Kyo Family en ligne ! 🚀');
+}).listen(PORT, () => {
+    console.log(`📡 Serveur de contournement Render activé sur le port ${PORT}`);
+});
+
+// --- INITIALISATION DU CLIENT DISCORD ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -123,6 +133,11 @@ client.once('ready', async () => {
     console.log(`🎁 ${client.user.tag} est connecté avec succès !`);
     client.user.setActivity('Ambiancer la Kyotaru Family', { type: ActivityType.Competing });
 
+    if (!process.env.CLIENT_ID || !process.env.TOKEN) {
+        console.error("❌ ERREUR CRITIQUE : Le CLIENT_ID ou le TOKEN est manquant dans l'environnement Render !");
+        return;
+    }
+
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     try {
         console.log('⚡ Envoi monolithique de toutes les commandes sur Discord...');
@@ -132,7 +147,7 @@ client.once('ready', async () => {
         );
         console.log('✅ Toutes les commandes sont synchronisées et disponibles !');
     } catch (err) {
-        console.error(err);
+        console.error("❌ Erreur lors de la synchronisation des commandes :", err);
     }
 });
 
@@ -220,7 +235,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [emb] });
     }
 
-    // --- EXECUTION : CATÉGORIE ADMIN FUN (Vérification des permissions) ---
+    // --- EXECUTION : CATÉGORIE ADMIN FUN ---
     const geopoliticalAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
 
     if (['gstart', 'greroll', 'sayembed', 'poll', 'ticketsetup', 'annonce', 'slowmode', 'lock', 'unlock', 'nuke'].includes(commandName) && !geopoliticalAdmin) {
@@ -302,7 +317,7 @@ client.on('interactionCreate', async interaction => {
         return newChan.send({ embeds: [emb] });
     }
 
-    // --- EXECUTION : CATÉGORIE ADMIN ABUSE FUN (Réservé aux admins) ---
+    // --- EXECUTION : CATÉGORIE ADMIN ABUSE FUN ---
     if (['fakeban', 'stealcoins', 'spamdm', 'forceprofile', 'ghostping'].includes(commandName) && !geopoliticalAdmin) {
         return interaction.reply({ content: "❌ Tentative d'abuse bloquée. Vous devez posséder la couronne d'Admin !", ephemeral: true });
     }
@@ -342,7 +357,7 @@ client.on('interactionCreate', async interaction => {
         return m.delete();
     }
 
-    // --- EXECUTION : CATÉGORIE ÉCONOMIE RÉVOLUTIONNAIRE ---
+    // --- EXECUTION : CATÉGORIE ÉCONOMIE ---
     if (commandName === 'eco') {
         const sub = options.getSubcommand();
 
