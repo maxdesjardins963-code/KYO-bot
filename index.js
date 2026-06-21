@@ -2,7 +2,7 @@ require('dotenv').config();
 const { 
     Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, 
     ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes, 
-    ModalBuilder, TextInputBuilder, TextInputStyle 
+    ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder
 } = require('discord.js');
 const fs = require('fs');
 const express = require('express');
@@ -38,8 +38,10 @@ let activeGames = {
     survie: { votes: {}, bonneRep: null, points: 0, actif: false }
 };
 
-// --- ENREGISTREMENT DES 15 COMMANDES STAFF AVEC CHOIX DU LOT ---
+// --- ENREGISTREMENT DES COMMANDES (15 JEUX + PANEL + BALANCE) ---
 const commands = [
+    new SlashCommandBuilder().setName('panel').setDescription('[STAFF] Afficher le grand guide explicatif des jeux'),
+    
     new SlashCommandBuilder().setName('drop').setDescription('[STAFF] Lâche un coffre de Kyo Points')
         .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot de Kyo Points à gagner').setRequired(true)),
         
@@ -99,14 +101,23 @@ const commands = [
     new SlashCommandBuilder().setName('balance').setDescription('Voir ses Kyo Points (Public)').addUserOption(o=>o.setName('user').setDescription('Joueur').setRequired(false))
 ];
 
+// ==========================================
+// 📡 ENREGISTREMENT ET DEPLOIEMENT DE TOUTES LES COMMANDES COMME NEXRO BOT
+// ==========================================
 client.once('ready', async () => {
-    console.log(`✅ Kyo Bot est connecté !`);
-    const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+    console.log(`✅ ${client.user.tag} est connecté et prêt !`);
+    try {
+        const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+        // Le fameux .put qui met à jour l'application de façon instantanée
+        await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
+        console.log("➡️ Toutes les commandes Kyo Bot ont été injectées avec succès !");
+    } catch (error) {
+        console.error("Erreur lors du .put :", error);
+    }
 });
 
 // ==========================================
-// ⚙️ EXÉCUTION DES COMMANDES (STAFF ONLY)
+// ⚙️ EXÉCUTION DES INTERACTIONS SLASH (STAFF ONLY)
 // ==========================================
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
@@ -117,16 +128,34 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply(`💳 **${user.username}** possède **${pts} Kyo Points** 💠`);
     }
 
+    // Protection Staff absolue
     if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
         return interaction.reply({ content: "⛔ **Accès refusé.** Seul le Staff Kyo peut instancier ces modules de jeu.", ephemeral: true });
     }
 
     const { commandName, options } = interaction;
-    const prize = options.getInteger('kyop');
+    const prize = options.getInteger('kyop') || 0;
+
+    // --- LE PANEL GUIDE ---
+    if (commandName === 'panel') {
+        const embed = new EmbedBuilder()
+            .setTitle("📜 GUIDE DES ÉVÉNEMENTS & JEUX KYO")
+            .setDescription("Bienvenue sur le centre d'information du serveur. Le Staff lance régulièrement des mini-jeux interactifs ! Sélectionnez une catégorie ci-dessous pour comprendre les règles en moins de 40 secondes.")
+            .setColor('#2b2d31');
+        
+        const row = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder().setCustomId('panel_guide_kyo').setPlaceholder('Choisir un sujet explicatif...').addOptions([
+                { label: 'Les Kyo Points (C\'est quoi ?)', value: 'guide_kyop', emoji: '💠' },
+                { label: 'Les Raids & Boss', value: 'guide_boss', emoji: '👹' },
+                { label: 'Les Jeux de Réflexes & Hasard', value: 'guide_games', emoji: '🎰' }
+            ])
+        );
+        return interaction.reply({ embeds: [embed], components: [row] });
+    }
 
     // 1. DROP
     if (commandName === 'drop') {
-        const embed = new EmbedBuilder().setTitle("📦 COFFRE SUR LE DISCORD !").setDescription(`Un coffre contenant **${prize} Kyo Points** vient de tomber !\nPressez le bouton pour tout piller !`).setColor('#00FF00');
+        const embed = new EmbedBuilder().setTitle("📦 COFFRE SUR LE DISCORD !").setDescription(`Un coffre contenant **${prize} Kyo Points** vient de tomber !\nPressez le bouton pour tout piller !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_drop_${prize}`).setLabel('PILLER').setStyle(ButtonStyle.Success).setEmoji('💰'));
         return interaction.reply({ embeds: [embed], components: [row] });
     }
@@ -135,7 +164,7 @@ client.on('interactionCreate', async interaction => {
     if (commandName === 'boss') {
         activeGames.boss.hp = options.getInteger('pv');
         activeGames.boss.actif = true;
-        const embed = new EmbedBuilder().setTitle("👹 RAID BOSS ACTIVÉ").setDescription(`**PV restants :** ${activeGames.boss.hp}\nSpammez l'épée ! Le dernier coup valide remporte **${prize} Kyo Points** !`).setColor('#FF0000');
+        const embed = new EmbedBuilder().setTitle("👹 UN BOSS DE RAID APPARAÎT !").setDescription(`**PV restants :** ${activeGames.boss.hp}\nSpammez l'épée ! Le dernier coup valide remporte **${prize} Kyo Points** !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_boss_${prize}`).setLabel('FRAPPER ⚔️').setStyle(ButtonStyle.Danger));
         return interaction.reply({ embeds: [embed], components: [row] });
     }
@@ -144,7 +173,7 @@ client.on('interactionCreate', async interaction => {
     if (commandName === 'loto') {
         const max = options.getInteger('max');
         const win = options.getInteger('gagnant');
-        const embed = new EmbedBuilder().setTitle("🎰 LOTO INSTANTANÉ").setDescription(`Le Staff a verrouillé un numéro entre **1 et ${max}**.\nTrouvez-le pour empocher **${prize} Kyo Points** !`).setColor('#FFD700');
+        const embed = new EmbedBuilder().setTitle("🎰 LOTO INSTANTANÉ").setDescription(`Le Staff a verrouillé un numéro secret entre **1 et ${max}**.\nTrouvez-le pour empocher **${prize} Kyo Points** !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_loto_${win}_${max}_${prize}`).setLabel('Parier 🎫').setStyle(ButtonStyle.Primary));
         return interaction.reply({ embeds: [embed], components: [row] });
     }
@@ -163,7 +192,7 @@ client.on('interactionCreate', async interaction => {
 
     // 6. ROULETTE RUSSE
     if (commandName === 'roulette') {
-        const embed = new EmbedBuilder().setTitle("🔫 ROULETTE RUSSE DES KYO POINTS").setDescription(`Tente ta chance face au barillet.\n**Survie :** +${prize} Kyo Points\n**Échec :** Tu perds la moitié de ton compte !`).setColor('#111111');
+        const embed = new EmbedBuilder().setTitle("🔫 ROULETTE RUSSE").setDescription(`Tente ta chance face au barillet.\n**Survie :** +${prize} Kyo Points\n**Échec :** Tu perds la moitié de ton compte !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_roulette_${prize}`).setLabel('PRESSER LA DETENTE').setStyle(ButtonStyle.Danger));
         return interaction.reply({ embeds: [embed], components: [row] });
     }
@@ -171,7 +200,7 @@ client.on('interactionCreate', async interaction => {
     // 7. GUERRE DES CLICS
     if (commandName === 'guerre') {
         activeGames.guerre = { red: [], blue: [], actif: true };
-        const embed = new EmbedBuilder().setTitle("⚔️ GUERRE DES CLICS SPAMMING (30s)").setDescription(`Rejoignez une faction et cliquez à l'infini !\nChaque membre du groupe gagnant remporte **${prize} Kyo Points** !`).setColor('#FFFFFF');
+        const embed = new EmbedBuilder().setTitle("⚔️ GUERRE DES CLICS (30s)").setDescription(`Rejoignez une faction et cliquez à l'infini !\nChaque membre du groupe gagnant remporte **${prize} Kyo Points** !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`action_war_red_${prize}`).setLabel('ROUGE 🔴').setStyle(ButtonStyle.Danger),
             new ButtonBuilder().setCustomId(`action_war_blue_${prize}`).setLabel('BLEU 🔵').setStyle(ButtonStyle.Primary)
@@ -202,10 +231,10 @@ client.on('interactionCreate', async interaction => {
     // 8. SNIPER
     if (commandName === 'sniper') {
         await interaction.reply({ content: "🎯 *Le Sniper se met en joue... Concentrez-vous, le bouton va surgir !*", fetchReply: true });
-        const delay = Math.floor(Math.random() * 6000) + 3000; // Entre 3 et 9 secondes
+        const delay = Math.floor(Math.random() * 6000) + 3000;
         
         setTimeout(async () => {
-            const embed = new EmbedBuilder().setTitle("💥 FEU ! TIREZ !").setDescription("CLIQUEZ SUR LE BOUTON AVANT TOUT LE MONDE !").setColor('#FF4500');
+            const embed = new EmbedBuilder().setTitle("💥 FEU ! TIREZ !").setDescription("CLIQUEZ SUR LE BOUTON AVANT TOUT LE MONDE !").setColor('#2b2d31');
             const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_sniper_${prize}`).setLabel('🔥 SHOOT !').setStyle(ButtonStyle.Danger));
             await interaction.channel.send({ embeds: [embed], components: [row] });
         }, delay);
@@ -214,12 +243,12 @@ client.on('interactionCreate', async interaction => {
 
     // 9. BOMBE
     if (commandName === 'bombe') {
-        const embed = new EmbedBuilder().setTitle("💣 ALERTE À LA BOMBE").setDescription(`Un colis piégé est actif ! Tente de couper le bon fil.\n**Réussite :** +${prize} Kyo Points\n**Explosion :** -100 points.`).setColor('#D2691E');
+        const embed = new EmbedBuilder().setTitle("💣 ALERTE À LA BOMBE").setDescription(`Un colis piégé est actif ! Tente de couper le bon fil.\n**Réussite :** +${prize} Kyo Points\n**Explosion :** -100 points.`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_bombe_${prize}`).setLabel('Couper le fil bleu ✂️').setStyle(ButtonStyle.Primary));
         return interaction.reply({ embeds: [embed], components: [row] });
     }
 
-    // 10. MOT INVÉRSÉ
+    // 10. MOT INVERSÉ
     if (commandName === 'mot') {
         activeGames.mot = { reponse: options.getString('reponse').toLowerCase(), points: prize, actif: true };
         return interaction.reply(`🔤 **VITESSE DACTYLO**\nRemettez ce mot dans le bon sens : **${options.getString('mot_inverse')}**\n*Le premier qui écrit le mot correct s'empare de **${prize} Kyo Points** !*`);
@@ -228,20 +257,20 @@ client.on('interactionCreate', async interaction => {
     // 11. BRAQUAGE COLLECTIF
     if (commandName === 'braquage') {
         activeGames.heist = { players: [], actif: true };
-        const embed = new EmbedBuilder().setTitle("💰 BRAQUAGE DE LA BANQUE").setDescription(`Le Staff lance un braquage ! Cliquez pour monter dans la voiture.\nSi le casse réussit, CHAQUE complice gagne **${prize} Kyo Points** !`).setColor('#4B0082');
+        const embed = new EmbedBuilder().setTitle("💰 BRAQUAGE DE LA BANQUE").setDescription(`Le Staff lance un braquage ! Cliquez pour monter dans la voiture.\nSi le casse réussit, CHAQUE complice gagne **${prize} Kyo Points** !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('action_heist_join').setLabel('Monter dans le van 🚔').setStyle(ButtonStyle.Secondary));
         const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
         
         setTimeout(async () => {
             activeGames.heist.actif = false;
-            if (activeGames.heist.players.length === 0) return msg.edit({ content: "❌ Le braquage a échoué car personne n'est monté dans le van !", embeds: [], components: [] });
+            if (activeGames.heist.players.length === 0) return msg.edit({ content: "❌ Le braquage a échoué faute de complices !", embeds: [], components: [] });
             
-            const reussite = Math.random() < 0.55; // 55% de chance de reussir
+            const reussite = Math.random() < 0.55;
             if (reussite) {
                 activeGames.heist.players.forEach(id => addPoints(id, prize));
-                await msg.edit({ content: `💰 **BRAQUAGE RÉUSSI !** La team s'échappe avec le magot ! Tous les participants empochent **${prize} Kyo Points** !`, embeds: [], components: [] });
+                await msg.edit({ content: `💰 **BRAQUAGE RÉUSSI !** La team s'échappe ! Tous les participants empochent **${prize} Kyo Points** !`, embeds: [], components: [] });
             } else {
-                await msg.edit({ content: `🚨 **INTERCEPTION DE LA POLICE !** Le casse a échoué lamentablement, tout le monde en cellule ! (0 points gagnés)`, embeds: [], components: [] });
+                await msg.edit({ content: `🚨 **INTERCEPTION DE LA POLICE !** Le casse a échoué lamentablement ! (0 points gagnés)`, embeds: [], components: [] });
             }
         }, 20000);
         return;
@@ -250,7 +279,7 @@ client.on('interactionCreate', async interaction => {
     // 12. SURVIE DÉCISIONNELLE
     if (commandName === 'survie') {
         activeGames.survie = { votes: {}, bonneRep: options.getString('bonne_rep').toUpperCase(), points: prize, actif: true };
-        const embed = new EmbedBuilder().setTitle("💀 JEU DE SURVIE ELIMINATOIRE").setDescription(`**Question :** ${options.getString('question')}\n\nVotez A ou B avec les boutons ci-dessous. Les bons gagnent **${prize} Kyo Points**, les autres sautent !`).setColor('#2F4F4F');
+        const embed = new EmbedBuilder().setTitle("💀 JEU DE SURVIE ELIMINATOIRE").setDescription(`**Question :** ${options.getString('question')}\n\nVotez A ou B. Les bons choix gagnent **${prize} Kyo Points**, les autres sautent !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('action_survie_A').setLabel('Option A').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('action_survie_B').setLabel('Option B').setStyle(ButtonStyle.Danger)
@@ -264,14 +293,14 @@ client.on('interactionCreate', async interaction => {
                 if (vote === activeGames.survie.bonneRep) gagnants.push(uid);
             }
             gagnants.forEach(id => addPoints(id, prize));
-            await msg.edit({ content: `🏁 **FIN DE LA SURVIE !** La bonne réponse était l'option **${activeGames.survie.bonneRep}**.\nFélicitations aux gagnants de la session qui prennent **${prize} Kyo Points** !`, embeds: [], components: [] });
+            await msg.edit({ content: `🏁 **FIN DE LA SURVIE !** La bonne réponse était l'option **${activeGames.survie.bonneRep}**.\nFélicitations aux survivants qui prennent **${prize} Kyo Points** !`, embeds: [], components: [] });
         }, 25000);
         return;
     }
 
     // 13. FLASH
     if (commandName === 'flash') {
-        const embed = new EmbedBuilder().setTitle("⚡ TIRAGE ÉCLAIR (15s)").setDescription(`Cliquez instantanément ! Un gagnant aléatoire prendra **${prize} Kyo Points** !`).setColor('#00FFFF');
+        const embed = new EmbedBuilder().setTitle("⚡ TIRAGE ÉCLAIR (15s)").setDescription(`Cliquez instantanément ! Un gagnant aléatoire prendra **${prize} Kyo Points** !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('action_flash_join').setLabel('S\'INSCRIRE').setStyle(ButtonStyle.Success));
         const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
         
@@ -294,7 +323,7 @@ client.on('interactionCreate', async interaction => {
 
     // 14. CHIFOUMI GLOBAL
     if (commandName === 'chifoumi') {
-        const embed = new EmbedBuilder().setTitle("✊✋✌️ CHIFOUMI CONTRE LE BOT").setDescription(`Défiez l'I.A du bot ! Si vous gagnez votre duel, vous remportez **${prize} Kyo Points** !`).setColor('#FF8C00');
+        const embed = new EmbedBuilder().setTitle("✊✋✌️ CHIFOUMI CONTRE LE BOT").setDescription(`Défiez l'I.A du bot ! Si vous gagnez votre duel, vous remportez **${prize} Kyo Points** !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId(`action_rps_p_${prize}`).setLabel('PIERRE ✊').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId(`action_rps_f_${prize}`).setLabel('PAPIER ✋').setStyle(ButtonStyle.Secondary),
@@ -305,14 +334,39 @@ client.on('interactionCreate', async interaction => {
 
     // 15. JACKPOT MACHINE
     if (commandName === 'jackpot') {
-        const embed = new EmbedBuilder().setTitle("🎰 MACHINE À SOUS DU SERVEUR").setDescription(`Le casino Kyo ouvre ses portes ! Pressez le levier.\nSi vous alignez 3 symboles identiques, vous touchez le lot de **${prize} Kyo Points** !`).setColor('#FF1493');
+        const embed = new EmbedBuilder().setTitle("🎰 MACHINE À SOUS").setDescription(`Le casino Kyo ouvre ses portes ! Pressez le levier.\nSi vous alignez 3 symboles identiques, vous touchez le lot de **${prize} Kyo Points** !`).setColor('#2b2d31');
         const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_jackpot_${prize}`).setLabel('ACTIVER LE LEVIER 🎰').setStyle(ButtonStyle.Primary));
         return interaction.reply({ embeds: [embed], components: [row] });
     }
 });
 
 // ==========================================
-// 🕹️ MODULE DE RÉPONSE INTERACTIVE (BOUTONS & MODALS)
+// 📥 INTERACTION DES MENUS DÉROULANTS (LE PANEL EXPLICATIF)
+// ==========================================
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isStringSelectMenu() || interaction.customId !== 'panel_guide_kyo') return;
+
+    const choice = interaction.values[0];
+    let embed = new EmbedBuilder().setColor('#2b2d31');
+
+    if (choice === 'guide_kyop') {
+        embed.setTitle("💠 SYSTÈME DE KYO POINTS")
+             .setDescription("L'économie est au cœur de notre activité.\n\n> **C'est quoi ?**\nLes Kyo Points représentent ton influence et ton activité sur le serveur. Ce n'est pas une monnaie automatique : elle est distribuée par le Staff lors de grands événements.\n\n> **À quoi ça sert ?**\nAucune boutique ennuyeuse ici ! Les points servent de jauge de puissance. Plus tu en as, plus tu es respecté, et plus tu as du poids lors des gros mini-jeux et événements flash organisés par le staff. Suis bien le chat !");
+    } 
+    else if (choice === 'guide_boss') {
+        embed.setTitle("👹 EXPLICATION : LES RAIDS BOSS")
+             .setDescription("Une mécanique de combat instantanée et ultra-compétitive.\n\n> **Le Principe**\nQuand un modérateur fait apparaître un Boss, une jauge de points de vie (PV) s'affiche. Tous les membres doivent cliquer le plus vite possible sur le bouton de combat pour blesser le monstre.\n\n> **Comment gagner ?**\nChaque clic inflige des dégâts aléatoires. Le bot calcule en temps réel la vie du monstre. Le joueur qui donne le **coup de grâce** (le tout dernier coup qui fait tomber les PV à 0) intercepte le lot de points fixé par l'admin ! Soyez synchros.");
+    } 
+    else if (choice === 'guide_games') {
+        embed.setTitle("🎰 EXPLICATION : JEUX ET REFLEXES")
+             .setDescription("Ici, tout se joue à la seconde ou à la chance pure.\n\n> **Jeux de Rapidité**\nPour le *Sniper*, le *Drapeau*, le *Mot* ou les *Maths*, la règle est simple : soit le plus rapide du chat ou clique sur le bouton dès qu'il apparaît pour valider le lot.\n\n> **Jeux de Risque**\nLa *Roulette Russe* ou le *Démineur de Bombe* te permettent de doubler tes gains ou de tout perdre sur un coup de tête. À toi de voir si tu as l'âme d'un joueur ou si tu préfères rester en sécurité !");
+    }
+
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+});
+
+// ==========================================
+// 🕹️ MODULE DE RÉPONSE AUX BOUTONS ET MODALS
 // ==========================================
 client.on('interactionCreate', async interaction => {
     if (interaction.isButton()) {
@@ -340,7 +394,7 @@ client.on('interactionCreate', async interaction => {
 
         if (id.startsWith('action_roulette_')) {
             const pts = parseInt(id.split('_')[2]);
-            if (Math.random() < 0.166) { // 1 chance sur 6
+            if (Math.random() < 0.166) { 
                 if (db.users[interaction.user.id]) db.users[interaction.user.id].kyop = Math.floor(db.users[interaction.user.id].kyop / 2);
                 saveDB();
                 return interaction.reply({ content: "💥 **PAN !** Le coup est parti ! Vos Kyo Points sont coupés en deux !", ephemeral: true });
@@ -383,7 +437,7 @@ client.on('interactionCreate', async interaction => {
         if (id.startsWith('action_survie_')) {
             const vote = id.split('_')[2];
             activeGames.survie.votes[interaction.user.id] = vote;
-            return interaction.reply({ content: `Selection de l'option **${vote}** validée. Wait and see.`, ephemeral: true });
+            return interaction.reply({ content: `Sélection de l'option **${vote}** validée. Wait and see.`, ephemeral: true });
         }
 
         if (id.startsWith('action_rps_')) {
