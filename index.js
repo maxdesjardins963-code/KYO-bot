@@ -1,471 +1,471 @@
 require('dotenv').config();
-const http = require('http');
 const { 
-    Client, GatewayIntentBits, EmbedBuilder, REST, Routes, 
-    SlashCommandBuilder, PermissionFlagsBits, ActionRowBuilder, 
-    ButtonBuilder, ButtonStyle, ActivityType, ModalBuilder, 
-    TextInputBuilder, TextInputStyle
+    Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, 
+    ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes, 
+    ModalBuilder, TextInputBuilder, TextInputStyle 
 } = require('discord.js');
 const fs = require('fs');
-const path = require('path');
+const express = require('express');
 
-// --- MINI SERVEUR RENDER ---
-const PORT = process.env.PORT || 10000;
-http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Kyo Bot Update 2.5 en ligne ! 🚀');
-}).listen(PORT);
-
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
-    ]
+const client = new Client({ 
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent] 
 });
 
-const CONFIG = { color: "#FF2A7A", currency: "💠 Kyo Points" };
-// Remplace par tes IDs si besoin
-const ADMIN_ROLES = ['1502765782960967861', '1512921382101454878'];
+// 🔴 TON ID DE ROLE STAFF ICI 🔴
+const STAFF_ROLE_ID = 'REMPLACE_PAR_ID_STAFF'; 
 
-// --- BASE DE DONNÉES JSON ---
-const dbPath = path.join(__dirname, 'database.json');
-if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, '{}');
+// --- BASE DE DONNÉES ---
+const dbPath = './kyo_db.json';
+let db = { users: {} };
+if (fs.existsSync(dbPath)) { db = JSON.parse(fs.readFileSync(dbPath, 'utf8')); }
 
-function readDB() { return JSON.parse(fs.readFileSync(dbPath, 'utf8')); }
-function writeDB(data) { fs.writeFileSync(dbPath, JSON.stringify(data, null, 2)); }
+function saveDB() { fs.writeFileSync(dbPath, JSON.stringify(db, null, 4)); }
 
-function getTodayString() {
-    const d = new Date();
-    return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+function addPoints(userId, amount) {
+    if (!db.users[userId]) db.users[userId] = { kyop: 0 };
+    db.users[userId].kyop += amount;
+    saveDB();
 }
 
-function getUserData(userId) {
-    const db = readDB();
-    if (!db[userId]) {
-        db[userId] = { 
-            coins: 0, streak: 0, lastMissionDate: null,
-            todayDate: getTodayString(), messagesToday: 0, imageToday: false, lastMessageTime: 0
-        };
-        writeDB(db);
-    }
-    // Reset quotidien paresseux
-    if (db[userId].todayDate !== getTodayString()) {
-        db[userId].todayDate = getTodayString();
-        db[userId].messagesToday = 0;
-        db[userId].imageToday = false;
-        writeDB(db);
-    }
-    return db[userId];
-}
+// --- VARIABLES DES JEUX EN COURS ---
+let activeGames = {
+    boss: { hp: 0, actif: false },
+    drapeau: { reponse: null, points: 0, actif: false },
+    math: { reponse: null, points: 0, actif: false },
+    mot: { reponse: null, points: 0, actif: false },
+    guerre: { red: [], blue: [], actif: false },
+    heist: { players: [], actif: false },
+    survie: { votes: {}, bonneRep: null, points: 0, actif: false }
+};
 
-function updateUserData(userId, key, value) {
-    const db = readDB();
-    if (!db[userId]) getUserData(userId);
-    db[userId][key] = value;
-    writeDB(db);
-}
-
-function isAdmin(member) {
-    return member.roles.cache.some(r => ADMIN_ROLES.includes(r.id)) || ADMIN_ROLES.includes(member.id) || member.permissions.has(PermissionFlagsBits.Administrator);
-}
-
-// Variables globales pour les jeux en cours
-const activeLotos = new Map();
-
-// --- DÉFINITION DES COMMANDES SLASH ---
+// --- ENREGISTREMENT DES 15 COMMANDES STAFF AVEC CHOIX DU LOT ---
 const commands = [
-    new SlashCommandBuilder().setName('put').setDescription('[ADMIN] Déploie un panel statique')
-        .addStringOption(o => o.setName('type').setDescription('Choisis le panel').setRequired(true).addChoices({ name: 'Panel Hub', value: 'panel' }, { name: 'Panel Guide', value: 'guide' })),
-    new SlashCommandBuilder().setName('giveaway').setDescription('[ADMIN] Lance un giveaway payant')
-        .addStringOption(o=>o.setName('lot').setDescription('Le cadeau').setRequired(true)).addIntegerOption(o=>o.setName('duree').setDescription('Durée (min)').setRequired(true)).addIntegerOption(o=>o.setName('prix').setDescription('Prix d\'entrée').setRequired(true)),
-    new SlashCommandBuilder().setName('admin').setDescription('[ADMIN] Gestion de l\'économie')
-        .addSubcommand(s => s.setName('add_points').setDescription('Donne des Kyo Points à un joueur').addUserOption(o=>o.setName('cible').setDescription('Le joueur').setRequired(true)).addIntegerOption(o=>o.setName('montant').setDescription('Combien ?').setRequired(true))),
-    new SlashCommandBuilder().setName('fakeban').setDescription('Simule un faux bannissement').addUserOption(o=>o.setName('cible').setDescription('La victime').setRequired(true)),
-    new SlashCommandBuilder().setName('fakeappeal').setDescription('Dénonce quelqu\'un à la police (Faux)').addUserOption(o=>o.setName('cible').setDescription('Le criminel').setRequired(true)).addStringOption(o=>o.setName('motif').setDescription('Le crime').setRequired(true)),
-    new SlashCommandBuilder().setName('trahison').setDescription('[ADMIN] Lance le jeu de la trahison !'),
-    
-    new SlashCommandBuilder().setName('pari').setDescription('Mise tes Kyo Points et tente de devenir riche !')
-        .addSubcommand(s => s.setName('slots').setDescription('🎰 Joue à la machine à sous').addIntegerOption(o=>o.setName('mise').setDescription('Combien tu mises ?').setRequired(true)))
-        .addSubcommand(s => s.setName('coffre').setDescription('📦 Choisis le bon coffre (Quitte ou Double)').addIntegerOption(o=>o.setName('mise').setDescription('Combien tu mises ?').setRequired(true)))
-        .addSubcommand(s => s.setName('duel').setDescription('⚔️ Défie un joueur à pile ou face').addUserOption(o=>o.setName('adversaire').setDescription('Qui défier ?').setRequired(true)).addIntegerOption(o=>o.setName('mise').setDescription('Mise par joueur').setRequired(true))),
+    new SlashCommandBuilder().setName('drop').setDescription('[STAFF] Lâche un coffre de Kyo Points')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot de Kyo Points à gagner').setRequired(true)),
         
-    new SlashCommandBuilder().setName('jeu').setDescription('[ADMIN] Lance un grand jeu serveur')
-        .addSubcommand(s => s.setName('loto').setDescription('🎯 Lance le Loto secret (via Modal)').addIntegerOption(o=>o.setName('nombre').setDescription('Le nombre secret').setRequired(true)).addIntegerOption(o=>o.setName('recompense').setDescription('La prime').setRequired(true)))
-        .addSubcommand(s => s.setName('braquage').setDescription('🏦 Lance un event de braquage en coop'))
-        .addSubcommand(s => s.setName('drapeau').setDescription('🌍 Jeu de rapidité : devine le pays'))
-        .addSubcommand(s => s.setName('codesecret').setDescription('🔢 Jeu de déduction : craque le coffre'))
+    new SlashCommandBuilder().setName('boss').setDescription('[STAFF] Invoque un Boss de Raid')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot pour celui qui achève le boss').setRequired(true))
+        .addIntegerOption(o=>o.setName('pv').setDescription('Points de vie du boss (ex: 200)').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('loto').setDescription('[STAFF] Lance un Loto express')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot pour celui qui trouve le chiffre pile').setRequired(true))
+        .addIntegerOption(o=>o.setName('gagnant').setDescription('Le numéro gagnant secret').setRequired(true))
+        .addIntegerOption(o=>o.setName('max').setDescription('Chiffre maximum (ex: 50 pour chercher entre 1 et 50)').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('drapeau').setDescription('[STAFF] Quiz Drapeau dans le chat')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot pour le premier qui trouve').setRequired(true))
+        .addStringOption(o=>o.setName('emoji').setDescription('L\'emoji du drapeau (ex: 🇧🇷)').setRequired(true))
+        .addStringOption(o=>o.setName('pays').setDescription('Le nom du pays exact en réponse').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('math').setDescription('[STAFF] Lancer un calcul mental rapide')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot pour le premier qui donne le bon résultat').setRequired(true))
+        .addStringOption(o=>o.setName('calcul').setDescription('Le calcul à afficher (ex: 12x4)').setRequired(true))
+        .addIntegerOption(o=>o.setName('reponse').setDescription('La réponse au calcul').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('roulette').setDescription('[STAFF] Ouvre la Roulette Russe des points')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot de points gagnés en cas de survie').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('guerre').setDescription('[STAFF] Lance une guerre des clics Rouge vs Bleu (30s)')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot reçu par CHAQUE membre de l\'équipe gagnante').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('sniper').setDescription('[STAFF] Test de réflexe pur (Sniper)')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot pour le tireur le plus rapide').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('bombe').setDescription('[STAFF] Lance le démineur de bombe')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot gagné si le fil est bien coupé').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('mot').setDescription('[STAFF] Dactylo à l\'envers')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot de points').setRequired(true))
+        .addStringOption(o=>o.setName('mot_inverse').setDescription('Le mot écrit à l\'envers (ex: ORXEN)').setRequired(true))
+        .addStringOption(o=>o.setName('reponse').setDescription('Le mot correct à l\'endroit (ex: NEXRO)').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('braquage').setDescription('[STAFF] Organise un braquage de banque collectif')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot remporté par chaque braqueur si ça réussit').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('survie').setDescription('[STAFF] Mini-jeu de survie (Vote A ou B)')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot pour les survivants qui ont bien voté').setRequired(true))
+        .addStringOption(o=>o.setName('question').setDescription('La question éliminatoire').setRequired(true))
+        .addStringOption(o=>o.setName('bonne_rep').setDescription('La bonne réponse (Mettre A ou B)').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('flash').setDescription('[STAFF] Giveaway Éclair de 15 secondes')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot de points tiré au sort').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('chifoumi').setDescription('[STAFF] Lance un Chifoumi contre le Bot')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot de points en cas de victoire contre le bot').setRequired(true)),
+        
+    new SlashCommandBuilder().setName('jackpot').setDescription('[STAFF] Active la Machine à sous (Jackpot)')
+        .addIntegerOption(o=>o.setName('kyop').setDescription('Le lot si un joueur aligne 3 emojis identiques').setRequired(true)),
+
+    new SlashCommandBuilder().setName('balance').setDescription('Voir ses Kyo Points (Public)').addUserOption(o=>o.setName('user').setDescription('Joueur').setRequired(false))
 ];
 
 client.once('ready', async () => {
-    console.log(`🎁 ${client.user.tag} est connecté avec l'Update 2.5 !`);
-    client.user.setActivity('Update 2.5 | 💠 Kyo Points', { type: ActivityType.Playing });
+    console.log(`✅ Kyo Bot est connecté !`);
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
 });
 
-// --- TRACKING MISSIONS QUOTIDIENNES ---
-client.on('messageCreate', message => {
-    if (message.author.bot || !message.guild) return;
-    const uData = getUserData(message.author.id);
-    const now = Date.now();
-    let updated = false;
-
-    if (uData.lastMissionDate === getTodayString()) return; // Mission déjà faite aujourd'hui
-
-    if (message.attachments.size > 0 && !uData.imageToday) { uData.imageToday = true; updated = true; }
-    // Anti-spam : 15 secondes d'intervalle et 15 caractères min
-    if (message.content.length > 15 && (now - uData.lastMessageTime > 15000)) {
-        uData.messagesToday += 1;
-        uData.lastMessageTime = now;
-        updated = true;
-    }
-
-    if (uData.messagesToday >= 10 && uData.imageToday) {
-        const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = `${yesterday.getFullYear()}-${yesterday.getMonth()+1}-${yesterday.getDate()}`;
-        
-        if (uData.lastMissionDate === yesterdayStr) uData.streak += 1;
-        else uData.streak = 1;
-
-        uData.lastMissionDate = getTodayString();
-        const reward = 100 + (uData.streak * 50);
-        uData.coins += reward;
-        
-        message.channel.send(`🎉 **INCROYABLE ${message.author} !** Tu as validé ta mission du jour ! \n🔥 Ton Streak actuel : **${uData.streak} jours**\n💰 Récompense : **+${reward} Kyo Points** !`).then(m => setTimeout(() => m.delete().catch(()=>{}), 15000));
-        updated = true;
-    }
-
-    if (updated) {
-        updateUserData(message.author.id, 'messagesToday', uData.messagesToday);
-        updateUserData(message.author.id, 'imageToday', uData.imageToday);
-        updateUserData(message.author.id, 'lastMessageTime', uData.lastMessageTime);
-        updateUserData(message.author.id, 'streak', uData.streak);
-        updateUserData(message.author.id, 'lastMissionDate', uData.lastMissionDate);
-        updateUserData(message.author.id, 'coins', uData.coins);
-    }
-});
-
-// --- ROUTEUR DES INTERACTIONS ---
+// ==========================================
+// ⚙️ EXÉCUTION DES COMMANDES (STAFF ONLY)
+// ==========================================
 client.on('interactionCreate', async interaction => {
-
-    // 1. SOUMISSION MODAL LOTO
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('loto_modal_')) {
-        const msgId = interaction.customId.split('_')[2];
-        if (!activeLotos.has(msgId)) return interaction.reply({content: "⏳ Ce loto est déjà terminé !", ephemeral: true});
-        
-        const guess = parseInt(interaction.fields.getTextInputValue('guess_input'));
-        if (isNaN(guess)) return interaction.reply({content: "❌ Ce n'est pas un nombre valide !", ephemeral: true});
-        
-        const loto = activeLotos.get(msgId);
-        loto.guesses.push({ userId: interaction.user.id, guess: guess });
-        
-        return interaction.reply({content: `✅ Ta réponse (**${guess}**) a été enregistrée secrètement. Attends la fin du chrono !`, ephemeral: true});
-    }
-
-    // 2. GESTION DES BOUTONS
-    if (interaction.isButton()) {
-        const cId = interaction.customId;
-
-        if (cId === 'btn_profile') {
-            const uData = getUserData(interaction.user.id);
-            const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle(`💳 Compte de ${interaction.user.username}`).addFields(
-                { name: '💠 Solde', value: `**${uData.coins} Kyo Points**`, inline: true },
-                { name: '🔥 Streak', value: `**${uData.streak} jours**`, inline: true },
-                { name: '🎯 Objectif du jour', value: `- Messages utiles : ${uData.messagesToday}/10\n- Image postée : ${uData.imageToday ? '✅' : '❌'}` }
-            );
-            return interaction.reply({ embeds: [emb], ephemeral: true });
-        }
-
-        if (cId === 'btn_guide') {
-            return interaction.reply({ content: `✨ **Rappel :** Envoie 10 messages et 1 image aujourd'hui pour ta mission.\nTente ta chance avec \`/pari slots\` !`, ephemeral: true });
-        }
-
-        if (cId === 'btn_loto_join') {
-            const msgId = interaction.message.id;
-            if (!activeLotos.has(msgId)) return interaction.reply({content: "⏳ Ce loto est terminé !", ephemeral: true});
-            
-            const loto = activeLotos.get(msgId);
-            if (loto.guesses.find(g => g.userId === interaction.user.id)) return interaction.reply({content: "❌ Tu as déjà tenté ta chance !", ephemeral: true});
-            
-            const modal = new ModalBuilder().setCustomId(`loto_modal_${msgId}`).setTitle("🎯 Tente ta chance !");
-            const input = new TextInputBuilder().setCustomId('guess_input').setLabel("Quel est le nombre caché ?").setPlaceholder("Écris un nombre ici...").setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
-        }
-
-        if (cId.startsWith('coffre_')) {
-            const [, miseStr, choix] = cId.split('_');
-            const mise = parseInt(miseStr);
-            if (interaction.message.interaction && interaction.message.interaction.user.id !== interaction.user.id) return interaction.reply({ content: "C'est pas ton coffre !", ephemeral: true });
-
-            const uData = getUserData(interaction.user.id);
-            const gainsMultipliers = [0, 1, 2];
-            const multiplier = gainsMultipliers[Math.floor(Math.random() * gainsMultipliers.length)];
-            const gainFinal = mise * multiplier;
-            updateUserData(interaction.user.id, 'coins', uData.coins + gainFinal);
-            
-            let msg = multiplier === 0 ? "💀 Piégé ! Tu perds ta mise." : multiplier === 1 ? "🤝 Remboursement !" : "🎉 **BINGO !** Doublé !";
-            return interaction.update({ content: `${interaction.user} a ouvert le **Coffre ${choix}**.\n\n${msg}\nGain: **${gainFinal} Kyo Points**.`, embeds: [], components: [] });
-        }
-
-        if (cId.startsWith('duel_accept_')) {
-            const [, , miseStr, defieurId] = cId.split('_');
-            const mise = parseInt(miseStr);
-            if (interaction.user.id === defieurId) return interaction.reply({ content: "Tu ne peux pas accepter ton duel !", ephemeral: true });
-
-            const uData1 = getUserData(defieurId);
-            const uData2 = getUserData(interaction.user.id);
-            if (uData2.coins < mise) return interaction.reply({ content: "Pas assez d'argent !", ephemeral: true });
-
-            updateUserData(defieurId, 'coins', uData1.coins - mise);
-            updateUserData(interaction.user.id, 'coins', uData2.coins - mise);
-
-            await interaction.update({ content: `⚔️ **DUEL !** <@${interaction.user.id}> affronte <@${defieurId}> pour **${mise} Kyo Points** !\n*La pièce tourne...* 🪙`, components: [] });
-
-            setTimeout(() => {
-                const gagnantId = Math.random() > 0.5 ? defieurId : interaction.user.id;
-                const gainTotal = mise * 2;
-                const finalData = getUserData(gagnantId);
-                updateUserData(gagnantId, 'coins', finalData.coins + gainTotal);
-                interaction.channel.send(`👑 <@${gagnantId}> gagne le duel et remporte **${gainTotal} Kyo Points** !`);
-            }, 3000);
-            return;
-        }
-
-        if (cId === 'duel_refuse') return interaction.update({ content: `🐔 Duel refusé par peur !`, components: [] });
-        if (cId === 'trahison_kick') return interaction.reply({ content: "Haha faux bouton ! Tu n'es pas un bon ami 😜", ephemeral: true });
-    }
-
-    // 3. COMMANDES SLASH
     if (!interaction.isChatInputCommand()) return;
-    const { commandName, options, user, member, channel, guild } = interaction;
 
-    if (commandName === 'admin') {
-        if (!isAdmin(member)) return interaction.reply({ content: "❌ Réservé au Staff.", ephemeral: true });
-        const cible = options.getUser('cible');
-        const montant = options.getInteger('montant');
-        const d = getUserData(cible.id);
-        updateUserData(cible.id, 'coins', d.coins + montant);
-        return interaction.reply(`✅ Transaction réussie ! **${montant} Kyo Points** donnés à ${cible}.`);
+    if (interaction.commandName === 'balance') {
+        const user = interaction.options.getUser('user') || interaction.user;
+        const pts = db.users[user.id]?.kyop || 0;
+        return interaction.reply(`💳 **${user.username}** possède **${pts} Kyo Points** 💠`);
     }
 
-    if (commandName === 'giveaway') {
-        if (!isAdmin(member)) return interaction.reply({ content: "❌ Réservé au Staff.", ephemeral: true });
-        const lot = options.getString('lot');
-        const duree = options.getInteger('duree');
-        const prix = options.getInteger('prix');
+    if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
+        return interaction.reply({ content: "⛔ **Accès refusé.** Seul le Staff Kyo peut instancier ces modules de jeu.", ephemeral: true });
+    }
+
+    const { commandName, options } = interaction;
+    const prize = options.getInteger('kyop');
+
+    // 1. DROP
+    if (commandName === 'drop') {
+        const embed = new EmbedBuilder().setTitle("📦 COFFRE SUR LE DISCORD !").setDescription(`Un coffre contenant **${prize} Kyo Points** vient de tomber !\nPressez le bouton pour tout piller !`).setColor('#00FF00');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_drop_${prize}`).setLabel('PILLER').setStyle(ButtonStyle.Success).setEmoji('💰'));
+        return interaction.reply({ embeds: [embed], components: [row] });
+    }
+
+    // 2. BOSS
+    if (commandName === 'boss') {
+        activeGames.boss.hp = options.getInteger('pv');
+        activeGames.boss.actif = true;
+        const embed = new EmbedBuilder().setTitle("👹 RAID BOSS ACTIVÉ").setDescription(`**PV restants :** ${activeGames.boss.hp}\nSpammez l'épée ! Le dernier coup valide remporte **${prize} Kyo Points** !`).setColor('#FF0000');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_boss_${prize}`).setLabel('FRAPPER ⚔️').setStyle(ButtonStyle.Danger));
+        return interaction.reply({ embeds: [embed], components: [row] });
+    }
+
+    // 3. LOTO
+    if (commandName === 'loto') {
+        const max = options.getInteger('max');
+        const win = options.getInteger('gagnant');
+        const embed = new EmbedBuilder().setTitle("🎰 LOTO INSTANTANÉ").setDescription(`Le Staff a verrouillé un numéro entre **1 et ${max}**.\nTrouvez-le pour empocher **${prize} Kyo Points** !`).setColor('#FFD700');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_loto_${win}_${max}_${prize}`).setLabel('Parier 🎫').setStyle(ButtonStyle.Primary));
+        return interaction.reply({ embeds: [embed], components: [row] });
+    }
+
+    // 4. DRAPEAU
+    if (commandName === 'drapeau') {
+        activeGames.drapeau = { reponse: options.getString('pays').toLowerCase(), points: prize, actif: true };
+        return interaction.reply(`🌍 **BLIND TEST GÉOGRAPHIQUE**\nTrouvez le pays de ce drapeau : ${options.getString('emoji')}\n*Répondez directement dans le chat pour choper **${prize} Kyo Points** !*`);
+    }
+
+    // 5. MATH
+    if (commandName === 'math') {
+        activeGames.math = { reponse: options.getInteger('reponse').toString(), points: prize, actif: true };
+        return interaction.reply(`🧠 **DÉFI MATHÉMATIQUE**\nCalculez rapidement : **${options.getString('calcul')}**\n*Premier à écrire le résultat exact = **${prize} Kyo Points** !*`);
+    }
+
+    // 6. ROULETTE RUSSE
+    if (commandName === 'roulette') {
+        const embed = new EmbedBuilder().setTitle("🔫 ROULETTE RUSSE DES KYO POINTS").setDescription(`Tente ta chance face au barillet.\n**Survie :** +${prize} Kyo Points\n**Échec :** Tu perds la moitié de ton compte !`).setColor('#111111');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_roulette_${prize}`).setLabel('PRESSER LA DETENTE').setStyle(ButtonStyle.Danger));
+        return interaction.reply({ embeds: [embed], components: [row] });
+    }
+
+    // 7. GUERRE DES CLICS
+    if (commandName === 'guerre') {
+        activeGames.guerre = { red: [], blue: [], actif: true };
+        const embed = new EmbedBuilder().setTitle("⚔️ GUERRE DES CLICS SPAMMING (30s)").setDescription(`Rejoignez une faction et cliquez à l'infini !\nChaque membre du groupe gagnant remporte **${prize} Kyo Points** !`).setColor('#FFFFFF');
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`action_war_red_${prize}`).setLabel('ROUGE 🔴').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId(`action_war_blue_${prize}`).setLabel('BLEU 🔵').setStyle(ButtonStyle.Primary)
+        );
+        const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
         
-        const emb = new EmbedBuilder().setColor("#FFD700").setTitle('🎁 GIVEAWAY EXCLUSIF 🎁').setDescription(`**Lot :** ${lot}\n**Prix d'entrée :** ${prix} 💠\n**Temps :** ${duree} min\n\n*Clique pour acheter ton ticket !*`);
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_gw_join').setLabel(`Participer (-${prix} Kyo Points)`).setStyle(ButtonStyle.Primary));
-        const msg = await interaction.reply({ embeds: [emb], components: [row], fetchReply: true });
-        const participants = new Set();
+        setTimeout(async () => {
+            activeGames.guerre.actif = false;
+            const rCount = activeGames.guerre.red.length;
+            const bCount = activeGames.guerre.blue.length;
+            let winners = [];
+            let texteWin = "Égalité ! Personne ne gagne.";
+            
+            if (rCount > bCount) {
+                winners = activeGames.guerre.red;
+                texteWin = `🔴 **L'Équipe ROUGE écrase le combat (${rCount} vs ${bCount}) !**`;
+            } else if (bCount > rCount) {
+                winners = activeGames.guerre.blue;
+                texteWin = `🔵 **L'Équipe BLEUE écrase le combat (${bCount} vs ${rCount}) !**`;
+            }
+            
+            winners.forEach(id => addPoints(id, prize));
+            await msg.edit({ content: `🏁 **FIN DE LA GUERRE !**\n${texteWin}\nTous les gagnants reçoivent **${prize} Kyo Points** !`, embeds: [], components: [] });
+        }, 30000);
+        return;
+    }
+
+    // 8. SNIPER
+    if (commandName === 'sniper') {
+        await interaction.reply({ content: "🎯 *Le Sniper se met en joue... Concentrez-vous, le bouton va surgir !*", fetchReply: true });
+        const delay = Math.floor(Math.random() * 6000) + 3000; // Entre 3 et 9 secondes
         
-        const collector = msg.createMessageComponentCollector({ filter: i => i.customId === 'btn_gw_join', time: duree * 60000 });
+        setTimeout(async () => {
+            const embed = new EmbedBuilder().setTitle("💥 FEU ! TIREZ !").setDescription("CLIQUEZ SUR LE BOUTON AVANT TOUT LE MONDE !").setColor('#FF4500');
+            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_sniper_${prize}`).setLabel('🔥 SHOOT !').setStyle(ButtonStyle.Danger));
+            await interaction.channel.send({ embeds: [embed], components: [row] });
+        }, delay);
+        return;
+    }
+
+    // 9. BOMBE
+    if (commandName === 'bombe') {
+        const embed = new EmbedBuilder().setTitle("💣 ALERTE À LA BOMBE").setDescription(`Un colis piégé est actif ! Tente de couper le bon fil.\n**Réussite :** +${prize} Kyo Points\n**Explosion :** -100 points.`).setColor('#D2691E');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_bombe_${prize}`).setLabel('Couper le fil bleu ✂️').setStyle(ButtonStyle.Primary));
+        return interaction.reply({ embeds: [embed], components: [row] });
+    }
+
+    // 10. MOT INVÉRSÉ
+    if (commandName === 'mot') {
+        activeGames.mot = { reponse: options.getString('reponse').toLowerCase(), points: prize, actif: true };
+        return interaction.reply(`🔤 **VITESSE DACTYLO**\nRemettez ce mot dans le bon sens : **${options.getString('mot_inverse')}**\n*Le premier qui écrit le mot correct s'empare de **${prize} Kyo Points** !*`);
+    }
+
+    // 11. BRAQUAGE COLLECTIF
+    if (commandName === 'braquage') {
+        activeGames.heist = { players: [], actif: true };
+        const embed = new EmbedBuilder().setTitle("💰 BRAQUAGE DE LA BANQUE").setDescription(`Le Staff lance un braquage ! Cliquez pour monter dans la voiture.\nSi le casse réussit, CHAQUE complice gagne **${prize} Kyo Points** !`).setColor('#4B0082');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('action_heist_join').setLabel('Monter dans le van 🚔').setStyle(ButtonStyle.Secondary));
+        const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
+        
+        setTimeout(async () => {
+            activeGames.heist.actif = false;
+            if (activeGames.heist.players.length === 0) return msg.edit({ content: "❌ Le braquage a échoué car personne n'est monté dans le van !", embeds: [], components: [] });
+            
+            const reussite = Math.random() < 0.55; // 55% de chance de reussir
+            if (reussite) {
+                activeGames.heist.players.forEach(id => addPoints(id, prize));
+                await msg.edit({ content: `💰 **BRAQUAGE RÉUSSI !** La team s'échappe avec le magot ! Tous les participants empochent **${prize} Kyo Points** !`, embeds: [], components: [] });
+            } else {
+                await msg.edit({ content: `🚨 **INTERCEPTION DE LA POLICE !** Le casse a échoué lamentablement, tout le monde en cellule ! (0 points gagnés)`, embeds: [], components: [] });
+            }
+        }, 20000);
+        return;
+    }
+
+    // 12. SURVIE DÉCISIONNELLE
+    if (commandName === 'survie') {
+        activeGames.survie = { votes: {}, bonneRep: options.getString('bonne_rep').toUpperCase(), points: prize, actif: true };
+        const embed = new EmbedBuilder().setTitle("💀 JEU DE SURVIE ELIMINATOIRE").setDescription(`**Question :** ${options.getString('question')}\n\nVotez A ou B avec les boutons ci-dessous. Les bons gagnent **${prize} Kyo Points**, les autres sautent !`).setColor('#2F4F4F');
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('action_survie_A').setLabel('Option A').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('action_survie_B').setLabel('Option B').setStyle(ButtonStyle.Danger)
+        );
+        const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
+        
+        setTimeout(async () => {
+            activeGames.survie.actif = false;
+            let gagnants = [];
+            for (const [uid, vote] of Object.entries(activeGames.survie.votes)) {
+                if (vote === activeGames.survie.bonneRep) gagnants.push(uid);
+            }
+            gagnants.forEach(id => addPoints(id, prize));
+            await msg.edit({ content: `🏁 **FIN DE LA SURVIE !** La bonne réponse était l'option **${activeGames.survie.bonneRep}**.\nFélicitations aux gagnants de la session qui prennent **${prize} Kyo Points** !`, embeds: [], components: [] });
+        }, 25000);
+        return;
+    }
+
+    // 13. FLASH
+    if (commandName === 'flash') {
+        const embed = new EmbedBuilder().setTitle("⚡ TIRAGE ÉCLAIR (15s)").setDescription(`Cliquez instantanément ! Un gagnant aléatoire prendra **${prize} Kyo Points** !`).setColor('#00FFFF');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('action_flash_join').setLabel('S\'INSCRIRE').setStyle(ButtonStyle.Success));
+        const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
+        
+        let inscrits = [];
+        const collector = msg.createMessageComponentCollector({ time: 15000 });
         collector.on('collect', async i => {
-            if (participants.has(i.user.id)) return i.reply({ content: "❌ Ticket déjà acheté !", ephemeral: true });
-            const d = getUserData(i.user.id);
-            if (d.coins < prix) return i.reply({ content: `❌ Fonds insuffisants !`, ephemeral: true });
-            updateUserData(i.user.id, 'coins', d.coins - prix);
-            participants.add(i.user.id);
-            await i.reply({ content: `✅ Ticket validé ! **-${prix} Kyo Points**.`, ephemeral: true });
+            if (i.customId === 'action_flash_join') {
+                if (!inscrits.includes(i.user.id)) inscrits.push(i.user.id);
+                await i.reply({ content: "✅ Pris en compte !", ephemeral: true });
+            }
         });
         collector.on('end', async () => {
-            await msg.edit({ components: [] });
-            const pArray = Array.from(participants);
-            if (pArray.length === 0) return channel.send(`😭 Personne n'a participé. Giveaway annulé.`);
-            const winnerId = pArray[Math.floor(Math.random() * pArray.length)];
-            channel.send(`🎉 **GIVEAWAY TERMINÉ !** 🎉\nFélicitations à <@${winnerId}> qui remporte : **${lot}** !`);
+            if (inscrits.length === 0) return msg.edit({ content: "⏳ Temps écoulé, aucun joueur n'a cliqué.", embeds: [], components: [] });
+            const winner = inscrits[Math.floor(Math.random() * inscrits.length)];
+            addPoints(winner, prize);
+            await msg.edit({ content: `🎉 **Tirage Flash fini !** Bravo à <@${winner}> qui rafle le lot de **${prize} Kyo Points** !`, embeds: [], components: [] });
         });
         return;
     }
 
-    if (commandName === 'put') {
-        if (!isAdmin(member)) return interaction.reply({ content: "❌ Réservé au Staff.", ephemeral: true });
-        const type = options.getString('type');
-        if (type === 'panel') {
-            const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle('🏦 LA BANQUE DES KYO POINTS 🏦').setDescription(`Clique ci-dessous pour voir tes fonds.`);
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_profile').setLabel('Mon Compte').setStyle(ButtonStyle.Primary));
-            await channel.send({ embeds: [emb], components: [row] });
-            return interaction.reply({ content: '✅ Panel déployé.', ephemeral: true });
-        } else {
-            const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle('📖 GUIDE KYO').setDescription(`Joue, parie, et gagne des points !`);
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_guide').setLabel('Résumé').setStyle(ButtonStyle.Success));
-            await channel.send({ embeds: [emb], components: [row] });
-            return interaction.reply({ content: '✅ Guide déployé.', ephemeral: true });
-        }
+    // 14. CHIFOUMI GLOBAL
+    if (commandName === 'chifoumi') {
+        const embed = new EmbedBuilder().setTitle("✊✋✌️ CHIFOUMI CONTRE LE BOT").setDescription(`Défiez l'I.A du bot ! Si vous gagnez votre duel, vous remportez **${prize} Kyo Points** !`).setColor('#FF8C00');
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`action_rps_p_${prize}`).setLabel('PIERRE ✊').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`action_rps_f_${prize}`).setLabel('PAPIER ✋').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`action_rps_c_${prize}`).setLabel('CISEAUX ✌️').setStyle(ButtonStyle.Secondary)
+        );
+        return interaction.reply({ embeds: [embed], components: [row] });
     }
 
-    if (commandName === 'pari') {
-        const sub = options.getSubcommand();
-        const mise = options.getInteger('mise');
-        const uData = getUserData(user.id);
-
-        if (uData.coins < mise || mise <= 0) return interaction.reply({ content: `❌ Pas assez d'argent. (Solde: ${uData.coins})`, ephemeral: true });
-
-        if (sub === 'slots') {
-            updateUserData(user.id, 'coins', uData.coins - mise);
-            const items = ['🍒', '🍋', '🔔', '💠', '💰'];
-            const r1 = items[Math.floor(Math.random() * items.length)], r2 = items[Math.floor(Math.random() * items.length)], r3 = items[Math.floor(Math.random() * items.length)];
-            let gain = 0; let msgTxt = "Perdu...";
-            if (r1 === r2 && r2 === r3) { gain = r1 === '💠' ? mise * 10 : mise * 5; msgTxt = "JACKPOT !!! 💎"; } 
-            else if (r1 === r2 || r2 === r3 || r1 === r3) { gain = mise * 2; msgTxt = "Doublé ! ✨"; }
-            updateUserData(user.id, 'coins', uData.coins - mise + gain);
-
-            await interaction.reply({ content: `🎰 **Machine de ${user.username}**\n**[ 🟩 | 🟩 | 🟩 ]**\n*Tourne...*` });
-            setTimeout(() => interaction.editReply({ content: `🎰 **Résultat de ${user.username}**\n**[ ${r1} | ${r2} | ${r3} ]**\n\n${msgTxt} (Gain: ${gain})` }), 2000);
-            return;
-        }
-
-        if (sub === 'coffre') {
-            updateUserData(user.id, 'coins', uData.coins - mise);
-            const emb = new EmbedBuilder().setColor("#FFA500").setTitle('📦 Quitte ou Double !').setDescription(`Mise : ${mise}. Trouve le x2 !`);
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`coffre_${mise}_A`).setLabel('Coffre A').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`coffre_${mise}_B`).setLabel('Coffre B').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`coffre_${mise}_C`).setLabel('Coffre C').setStyle(ButtonStyle.Primary)
-            );
-            return interaction.reply({ embeds: [emb], components: [row] });
-        }
-
-        if (sub === 'duel') {
-            const adv = options.getUser('adversaire');
-            if (adv.bot || adv.id === user.id) return interaction.reply({ content: "❌ Impossible !", ephemeral: true });
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`duel_accept_${mise}_${user.id}`).setLabel('Accepter').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('duel_refuse').setLabel('Refuser').setStyle(ButtonStyle.Danger)
-            );
-            return interaction.reply({ content: `⚔️ **${adv}**, ${user} te défie ! Mise: **${mise}**. Accepte-tu ?`, components: [row] });
-        }
-    }
-
-    if (commandName === 'jeu') {
-        if (!isAdmin(member)) return interaction.reply({ content: "❌ Staff uniquement.", ephemeral: true });
-        const sub = options.getSubcommand();
-
-        if (sub === 'loto') {
-            const nombre = options.getInteger('nombre'), recompense = options.getInteger('recompense');
-            const emb = new EmbedBuilder().setColor(CONFIG.color).setTitle('🎯 LOTO SECRET').setDescription(`💰 **Récompense : ${recompense} Kyo Points**\n⏳ **60 secondes** pour deviner !`);
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_loto_join').setLabel('Tenter ma chance 🎟️').setStyle(ButtonStyle.Success));
-            const msg = await interaction.reply({ embeds: [emb], components: [row], fetchReply: true });
-            
-            activeLotos.set(msg.id, { secret: nombre, recompense: recompense, guesses: [] });
-            
-            setTimeout(async () => {
-                const loto = activeLotos.get(msg.id);
-                activeLotos.delete(msg.id);
-                await msg.edit({ components: [] });
-                if (loto.guesses.length === 0) return channel.send("😭 Personne n'a participé.");
-                
-                let text = "📜 **RÉSULTATS :**\n";
-                let gagnants = [];
-                loto.guesses.forEach(g => {
-                    text += `- <@${g.userId}> a dit : **${g.guess}**\n`;
-                    if (g.guess === loto.secret) gagnants.push(g.userId);
-                });
-                text += `\n🎯 Le nombre était **${loto.secret}** !`;
-                
-                if (gagnants.length > 0) {
-                    gagnants.forEach(id => updateUserData(id, 'coins', getUserData(id).coins + loto.recompense));
-                    text += `\n🎉 **Gagnants :** ${gagnants.map(id=>`<@${id}>`).join(', ')} (+${loto.recompense} pts) !`;
-                } else text += `\n😭 Personne n'a trouvé !`;
-                channel.send(text);
-            }, 60000);
-            return;
-        }
-
-        if (sub === 'braquage') {
-            const emb = new EmbedBuilder().setColor("#000000").setTitle('🏦 BRAQUAGE').setDescription("💰 **Butin : 10000 pts**\n⏳ 30s pour rejoindre !");
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('join_braquage').setLabel('Rejoindre l\'assaut !').setStyle(ButtonStyle.Danger));
-            const msg = await interaction.reply({ embeds: [emb], components: [row], fetchReply: true });
-            let braqueurs = [];
-            const collector = msg.createMessageComponentCollector({ filter: i => i.customId === 'join_braquage', time: 30000 });
-            collector.on('collect', i => {
-                if(!braqueurs.includes(i.user.id)) { braqueurs.push(i.user.id); i.reply({ content: "Tu es dedans !", ephemeral: true }); }
-                else i.reply({ content: "Déjà dedans !", ephemeral: true });
-            });
-            collector.on('end', async () => {
-                await msg.edit({ components: [] });
-                if (braqueurs.length === 0) return channel.send("😭 Event annulé.");
-                if (Math.random() > 0.4) {
-                    const gain = Math.floor(10000 / braqueurs.length);
-                    braqueurs.forEach(id => updateUserData(id, 'coins', getUserData(id).coins + gain));
-                    channel.send(`🎉 **RÉUSSI !** Chacun gagne **${gain} pts** !`);
-                } else channel.send(`🚨 **ÉCHEC !** La police vous a eus.`);
-            });
-            return;
-        }
-
-        if (sub === 'drapeau') {
-            await interaction.deferReply();
-            const pays = [{nom:'japon', flag:'🇯🇵'}, {nom:'canada', flag:'🇨🇦'}, {nom:'bresil', flag:'🇧🇷'}];
-            const p = pays[Math.floor(Math.random() * pays.length)];
-            await interaction.editReply(`🌍 Quel est ce pays : ${p.flag} ? (Gain: 500)`);
-            const collector = channel.createMessageCollector({ filter: m => m.content.toLowerCase() === p.nom, max: 1, time: 20000 });
-            collector.on('collect', m => {
-                updateUserData(m.author.id, 'coins', getUserData(m.author.id).coins + 500);
-                channel.send(`🏆 Gagné ${m.author} ! C'était le **${p.nom.toUpperCase()}** ! (+500)`);
-            });
-            collector.on('end', coll => { if(coll.size === 0) channel.send(`⏳ C'était : **${p.nom.toUpperCase()}**.`); });
-            return;
-        }
-
-        if (sub === 'codesecret') {
-            await interaction.deferReply();
-            const secret = Math.floor(Math.random() * 8999) + 1000;
-            await interaction.editReply(`🔢 **CRACKAGE** (1000-9999)\nProposez vos nombres !`);
-            const collector = channel.createMessageCollector({ filter: m => !isNaN(m.content) && !m.author.bot, time: 60000 });
-            collector.on('collect', m => {
-                const guess = parseInt(m.content);
-                if (guess === secret) {
-                    updateUserData(m.author.id, 'coins', getUserData(m.author.id).coins + 1000);
-                    channel.send(`🔓 **BINGO !** ${m.author} a trouvé **${secret}** (+1000 pts) !`);
-                    collector.stop();
-                } else m.react(guess < secret ? '⬆️' : '⬇️');
-            });
-            collector.on('end', (c, r) => { if (r !== 'user') channel.send(`⏳ Verrouillé. Le code était **${secret}**.`); });
-            return;
-        }
-    }
-
-    if (commandName === 'fakeban' || commandName === 'fakeappeal') {
-        const target = options.getUser('cible');
-        if (commandName === 'fakeban') {
-            await interaction.reply(`🚨 Adieu ${target}, justice est rendue !`);
-            return setTimeout(() => interaction.channel.send(`*Haha je rigole !*`), 3000);
-        } else {
-            return interaction.reply(`🚓 **POLICE !** ${user} dénonce ${target} pour : "${options.getString('motif')}".`);
-        }
-    }
-
-    if (commandName === 'trahison') {
-        if (!isAdmin(member)) return interaction.reply({ content: "❌ Admin uniquement.", ephemeral: true });
-        await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: false });
-        const msg = await interaction.reply({ content: "🔪 **JEU DE LA TRAHISON**\nLe salon est verrouillé. 20s pour s'inscrire.", components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('trahison_join').setLabel('Rejoindre').setStyle(ButtonStyle.Danger))], fetchReply: true });
-        let parts = [];
-        const collector = msg.createMessageComponentCollector({ filter: i => i.customId === 'trahison_join', time: 20000 });
-        collector.on('collect', async i => { if (!parts.includes(i.user.id)) { parts.push(i.user.id); await i.reply({ content: 'Inscrit', ephemeral: true }); } });
-        collector.on('end', async () => {
-            await msg.delete().catch(()=>{});
-            if (parts.length < 2) { await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: true }); return channel.send("❌ Pas assez de joueurs."); }
-            const p1 = guild.members.cache.get(parts[0]), p2 = guild.members.cache.get(parts[1]);
-            const tMsg = await channel.send({ content: `😈 Finalistes : ${p1} et ${p2}.\nVoulez-vous kick l'autre ?`, components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('trahison_kick').setLabel('Trahir').setStyle(ButtonStyle.Danger))] });
-            setTimeout(async () => {
-                await tMsg.delete().catch(()=>{});
-                await channel.permissionOverwrites.edit(p1.id, { SendMessages: true }); await channel.permissionOverwrites.edit(p2.id, { SendMessages: true });
-                const ans = 15 + 12; // Modifiable
-                await channel.send(`🔥 **DUEL FINAL !** Vous deux seuls pouvez parler.\n🔢 **Combien font : 15 + 12 ?**`);
-                const mathColl = channel.createMessageCollector({ filter: m => (m.author.id===p1.id || m.author.id===p2.id) && m.content.trim()==='27', max: 1, time: 30000 });
-                mathColl.on('collect', m => channel.send(`🏆 **Gagné ${m.author} !**`));
-                mathColl.on('end', async () => {
-                    await channel.permissionOverwrites.edit(p1.id, { SendMessages: null }); await channel.permissionOverwrites.edit(p2.id, { SendMessages: null });
-                    await channel.permissionOverwrites.edit(guild.roles.everyone, { SendMessages: true });
-                    channel.send("🔓 Salon ouvert.");
-                });
-            }, 7000);
-        });
+    // 15. JACKPOT MACHINE
+    if (commandName === 'jackpot') {
+        const embed = new EmbedBuilder().setTitle("🎰 MACHINE À SOUS DU SERVEUR").setDescription(`Le casino Kyo ouvre ses portes ! Pressez le levier.\nSi vous alignez 3 symboles identiques, vous touchez le lot de **${prize} Kyo Points** !`).setColor('#FF1493');
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_jackpot_${prize}`).setLabel('ACTIVER LE LEVIER 🎰').setStyle(ButtonStyle.Primary));
+        return interaction.reply({ embeds: [embed], components: [row] });
     }
 });
 
+// ==========================================
+// 🕹️ MODULE DE RÉPONSE INTERACTIVE (BOUTONS & MODALS)
+// ==========================================
+client.on('interactionCreate', async interaction => {
+    if (interaction.isButton()) {
+        const id = interaction.customId;
+
+        if (id.startsWith('action_drop_')) {
+            const pts = parseInt(id.split('_')[2]);
+            addPoints(interaction.user.id, pts);
+            return interaction.update({ content: `🎉 **Loot instantané !** <@${interaction.user.id}> a ouvert le coffre en premier et gagne **${pts} Kyo Points** !`, embeds: [], components: [] });
+        }
+
+        if (id.startsWith('action_boss_')) {
+            if (!activeGames.boss.actif) return interaction.reply({ content: "❌ Le boss n'est plus de ce monde.", ephemeral: true });
+            const pts = parseInt(id.split('_')[2]);
+            activeGames.boss.hp -= Math.floor(Math.random() * 12) + 4;
+            
+            if (activeGames.boss.hp <= 0) {
+                activeGames.boss.actif = false;
+                addPoints(interaction.user.id, pts);
+                return interaction.update({ content: `💀 **MONSTRE TERRASSÉ !** <@${interaction.user.id}> assène l'ultime coup fatal et empoche le lot de **${pts} Kyo Points** !`, embeds: [], components: [] });
+            } else {
+                return interaction.reply({ content: `⚔️ Impact ! Vitalité restante du Boss : **${activeGames.boss.hp} PV**.`, ephemeral: true });
+            }
+        }
+
+        if (id.startsWith('action_roulette_')) {
+            const pts = parseInt(id.split('_')[2]);
+            if (Math.random() < 0.166) { // 1 chance sur 6
+                if (db.users[interaction.user.id]) db.users[interaction.user.id].kyop = Math.floor(db.users[interaction.user.id].kyop / 2);
+                saveDB();
+                return interaction.reply({ content: "💥 **PAN !** Le coup est parti ! Vos Kyo Points sont coupés en deux !", ephemeral: true });
+            } else {
+                addPoints(interaction.user.id, pts);
+                return interaction.reply({ content: `🍀 *Clic...* Chambre vide ! Tu survis et ramasses **${pts} Kyo Points**.`, ephemeral: true });
+            }
+        }
+
+        if (id.startsWith('action_war_')) {
+            const [, , team, pts] = id.split('_');
+            if (team === 'red' && !activeGames.guerre.red.includes(interaction.user.id)) activeGames.guerre.red.push(interaction.user.id);
+            if (team === 'blue' && !activeGames.guerre.blue.includes(interaction.user.id)) activeGames.guerre.blue.push(interaction.user.id);
+            return interaction.reply({ content: "⚔️ Spam enregistré pour ton équipe !", ephemeral: true });
+        }
+
+        if (id.startsWith('action_sniper_')) {
+            const pts = parseInt(id.split('_')[2]);
+            addPoints(interaction.user.id, pts);
+            return interaction.update({ content: `🎯 **HEADSHOT !** <@${interaction.user.id}> a dégainé à la vitesse de l'éclair et sécurise **${pts} Kyo Points** !`, embeds: [], components: [] });
+        }
+
+        if (id.startsWith('action_bombe_')) {
+            const pts = parseInt(id.split('_')[2]);
+            if (Math.random() < 0.25) {
+                if (db.users[interaction.user.id]) db.users[interaction.user.id].kyop = Math.max(0, db.users[interaction.user.id].kyop - 100);
+                saveDB();
+                return interaction.update({ content: `💥 **BOOM !** <@${interaction.user.id}> a sectionné le mauvais câble ! Explosion fatale (-100 points).`, embeds: [], components: [] });
+            } else {
+                addPoints(interaction.user.id, pts);
+                return interaction.update({ content: `🟢 **DÉMORCÉ !** <@${interaction.user.id}> a coupé le bon fil avec sang-froid et gagne **${pts} Kyo Points** !`, embeds: [], components: [] });
+            }
+        }
+
+        if (id === 'action_heist_join') {
+            if (!activeGames.heist.players.includes(interaction.user.id)) activeGames.heist.players.push(interaction.user.id);
+            return interaction.reply({ content: "💼 Tu as équipé ton masque, tu es prêt pour le casse.", ephemeral: true });
+        }
+
+        if (id.startsWith('action_survie_')) {
+            const vote = id.split('_')[2];
+            activeGames.survie.votes[interaction.user.id] = vote;
+            return interaction.reply({ content: `Selection de l'option **${vote}** validée. Wait and see.`, ephemeral: true });
+        }
+
+        if (id.startsWith('action_rps_')) {
+            const [, , choice, ptsStr] = id.split('_');
+            const pts = parseInt(ptsStr);
+            const rps = ['p', 'f', 'c'];
+            const botPlay = rps[Math.floor(Math.random() * 3)];
+            
+            let label = {p: "✊ PIERRE", f: "✋ PAPIER", c: "✌️ CISEAUX"};
+            let res = "Égalité ! Recommence.";
+            
+            if ((choice === 'p' && botPlay === 'c') || (choice === 'f' && botPlay === 'p') || (choice === 'c' && botPlay === 'f')) {
+                addPoints(interaction.user.id, pts);
+                res = `🎉 **VICTOIRE !** Tu as mis ${label[choice]} contre ${label[botPlay]} du bot ! Tu prends **${pts} Kyop** !`;
+            } else if (choice !== botPlay) {
+                res = `❌ **PERDU !** Ton choix : ${label[choice]} | Bot : ${label[botPlay]}. Retente ta chance !`;
+            }
+            return interaction.reply({ content: res, ephemeral: true });
+        }
+
+        if (id.startsWith('action_jackpot_')) {
+            const pts = parseInt(id.split('_')[2]);
+            const items = ['🍎', '💎', '🍋', '🔔', '🍀'];
+            const r1 = items[Math.floor(Math.random() * items.length)];
+            const r2 = items[Math.floor(Math.random() * items.length)];
+            const r3 = items[Math.floor(Math.random() * items.length)];
+            
+            if (r1 === r2 && r2 === r3) {
+                addPoints(interaction.user.id, pts);
+                return interaction.reply({ content: `🎰 **[ ${r1} | ${r2} | ${r3} ]**\n🏆 **JACKPOT INCROYABLE !** Tu as aligné 3 symboles ! Tu gagnes **${pts} Kyo Points** !` });
+            } else {
+                return interaction.reply({ content: `🎰 **[ ${r1} | ${r2} | ${r3} ]**\n❌ Pas de correspondance. Retente ta chance au prochain tour !`, ephemeral: true });
+            }
+        }
+
+        if (id.startsWith('action_loto_')) {
+            const [, , win, max, pts] = id.split('_');
+            const modal = new ModalBuilder().setCustomId(`modal_loto_${win}_${pts}`).setTitle('Pari Loto');
+            const txt = new TextInputBuilder().setCustomId('choice').setLabel(`Propose un nombre entre 1 et ${max}`).setStyle(TextInputStyle.Short).setRequired(true);
+            modal.addComponents(new ActionRowBuilder().addComponents(txt));
+            await interaction.showModal(modal);
+        }
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_loto_')) {
+        const [, , winNum, pts] = interaction.customId.split('_');
+        const ans = interaction.fields.getTextInputValue('choice').trim();
+        
+        if (ans === winNum) {
+            addPoints(interaction.user.id, parseInt(pts));
+            return interaction.reply(`🎰 **NUMÉRO EXACT !** <@${interaction.user.id}> a démasqué le chiffre secret (**${winNum}**) et s'empare du lot de **${pts} Kyo Points** !`);
+        } else {
+            return interaction.reply({ content: `❌ Raté ! Le chiffre secret n'était pas ${ans}.`, ephemeral: true });
+        }
+    }
+});
+
+// ==========================================
+// 💬 CHAT VERIFICATIONS (DRAPEAU, MATH, MOT)
+// ==========================================
+client.on('messageCreate', async message => {
+    if (message.author.bot) return;
+
+    if (activeGames.drapeau.actif && message.content.toLowerCase() === activeGames.drapeau.reponse) {
+        activeGames.drapeau.actif = false;
+        addPoints(message.author.id, activeGames.drapeau.points);
+        return message.reply(`🌍 **RÉPONSE COMPLÈTE !** Bravo <@${message.author.id}>, c'était bien **${message.content}**. Tu gagnes le lot de **${activeGames.drapeau.points} Kyo Points** !`);
+    }
+
+    if (activeGames.math.actif && message.content.trim() === activeGames.math.reponse) {
+        activeGames.math.actif = false;
+        addPoints(message.author.id, activeGames.math.points);
+        return message.reply(`🧠 **GÉNIE !** <@${message.author.id}> valide le calcul en premier. Gain : **${activeGames.math.points} Kyo Points** !`);
+    }
+
+    if (activeGames.mot.actif && message.content.toLowerCase() === activeGames.mot.reponse) {
+        activeGames.mot.actif = false;
+        addPoints(message.author.id, activeGames.mot.points);
+        return message.reply(`🔤 **Dactylo Maître !** <@${message.author.id}> remet le mot dans l'axe. Gain : **${activeGames.mot.points} Kyo Points** !`);
+    }
+});
+
+const app = express();
+app.listen(process.env.PORT || 3000);
 client.login(process.env.TOKEN);
