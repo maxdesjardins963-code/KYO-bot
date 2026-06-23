@@ -12,7 +12,7 @@ const client = new Client({
 });
 
 // 🔴 TON ID DE ROLE STAFF ICI 🔴
-const STAFF_ROLE_ID = 'REMPLACE_PAR_ID_STAFF'; 
+const STAFF_ROLE_ID = '1502765782960967861'; 
 
 // --- BASE DE DONNÉES ---
 const dbPath = './kyo_db.json';
