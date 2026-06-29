@@ -20,7 +20,7 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-// ID du rôle requis pour exécuter les commandes d'administration/lancement
+// ID du rôle requis pour exécuter les commandes
 const REQUIRED_ROLE_ID = '1502765782960967861';
 
 // Base de données temporaire en mémoire
@@ -65,9 +65,17 @@ const commands = [
         name: 'kyo-giveaway',
         description: '✦ Lancer un giveaway payant (Entrée en Kyo Coins)',
         options: [
-            { name: 'recompense', type: 3, description: 'Le lot à gagner', required: true }, // STRING
-            { name: 'prix_entree', type: 4, description: 'Coût en Kyo Coins pour participer', required: true }, // INTEGER
-            { name: 'minutes', type: 4, description: 'Durée du giveaway en minutes', required: true } // INTEGER
+            { name: 'recompense', type: 3, description: 'Le lot à gagner', required: true },
+            { name: 'prix_entree', type: 4, description: 'Coût en Kyo Coins pour participer', required: true },
+            { name: 'minutes', type: 4, description: 'Durée du giveaway en minutes', required: true }
+        ]
+    },
+    {
+        name: 'mute',
+        description: '✦ Isoler un membre du réseau pendant 1 heure (Timeout)',
+        options: [
+            { name: 'cible', type: 6, description: 'Le sujet à déconnecter temporairement', required: true },
+            { name: 'motif', type: 3, description: 'Raison de l\'isolement', required: false }
         ]
     }
 ];
@@ -193,7 +201,7 @@ client.on('interactionCreate', async interaction => {
         });
     }
 
-    // 3. COMMANDE : /PUT THE KYO HUB
+    // 3. COMMANDE : /KYO-HUB
     if (interaction.commandName === 'kyo-hub') {
         const hubMain = new EmbedBuilder()
             .setAuthor({ name: 'KYO NETWORK • INTERFACE INTERNE', iconURL: client.user.displayAvatarURL() })
@@ -225,7 +233,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ content: outputMessage, ephemeral: true });
     }
 
-    // 5. COMMANDE : /KYO-GIVE (ADMIN)
+    // 5. COMMANDE : /KYO-GIVE
     if (interaction.commandName === 'kyo-give') {
         const targetUser = interaction.options.getUser('cible');
         const amountToGive = interaction.options.getInteger('montant');
@@ -233,7 +241,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ content: `✓ **${amountToGive} Kyo Coins** versés à ${targetUser}.`, ephemeral: true });
     }
 
-    // 6. COMMANDE : /KYO-GIVEAWAY (NOUVEAU)
+    // 6. COMMANDE : /KYO-GIVEAWAY
     if (interaction.commandName === 'kyo-giveaway') {
         const prize = interaction.options.getString('recompense');
         const entryCost = interaction.options.getInteger('prix_entree');
@@ -244,21 +252,12 @@ client.on('interactionCreate', async interaction => {
 
         const gwEmbed = new EmbedBuilder()
             .setAuthor({ name: '🎁 KYO PROTOCOLE • TIRAGE AU SORT' })
-            .setDescription(
-                `───\n` +
-                `**Lot mis en jeu :** ${prize}\n` +
-                `**Frais d'accès :** \`${entryCost} Kyo Coins\`\n\n` +
-                `**Fin du recrutement :** <t:${endTimeStamp}:R>\n` +
-                `───`
-            )
+            .setDescription(`───\n**Lot mis en jeu :** ${prize}\n**Frais d'accès :** \`${entryCost} Kyo Coins\`\n\n**Fin du recrutement :** <t:${endTimeStamp}:R>\n───`)
             .setColor('#5865F2')
             .setFooter({ text: 'Cliquez sur le bouton pour payer et participer' });
 
         const gwRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('join_giveaway')
-                .setLabel(`S'inscrire (-${entryCost} Coins)`)
-                .setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId('join_giveaway').setLabel(`S'inscrire (-${entryCost} Coins)`).setStyle(ButtonStyle.Success)
         );
 
         const gwMessage = await interaction.reply({ embeds: [gwEmbed], components: [gwRow], fetchReply: true });
@@ -268,51 +267,60 @@ client.on('interactionCreate', async interaction => {
 
         gwCollector.on('collect', async i => {
             if (i.customId === 'join_giveaway') {
-                if (participants.has(i.user.id)) {
-                    return i.reply({ content: '✕ Vous êtes déjà enregistré dans la base de données de ce tirage.', ephemeral: true });
-                }
-
+                if (participants.has(i.user.id)) return i.reply({ content: '✕ Vous êtes déjà enregistré dans la base de données de ce tirage.', ephemeral: true });
                 const userStats = getUserData(i.user.id);
-                if (userStats.coins < entryCost) {
-                    return i.reply({ content: `✕ **Fonds insuffisants.** Il vous faut ${entryCost} Kyo Coins pour entrer, mais vous n'en avez que ${userStats.coins}.`, ephemeral: true });
-                }
-
-                // Soustraction de l'argent et ajout du participant
+                if (userStats.coins < entryCost) return i.reply({ content: `✕ **Fonds insuffisants.** Il vous faut ${entryCost} Kyo Coins pour entrer.`, ephemeral: true });
                 updateUserData(i.user.id, -entryCost, 0);
                 participants.add(i.user.id);
-                
-                await i.reply({ content: `✓ **Inscription validée.** \`${entryCost} Kyo Coins\` ont été débités de votre compte. Bonne chance !`, ephemeral: true });
+                await i.reply({ content: `✓ **Inscription validée.** \`${entryCost} Kyo Coins\` ont été débités de votre compte.`, ephemeral: true });
             }
         });
 
         gwCollector.on('end', async () => {
             const partArray = Array.from(participants);
-            
             if (partArray.length === 0) {
-                const failEmbed = new EmbedBuilder()
-                    .setTitle('🎁 TIRAGE AVORTÉ')
-                    .setDescription(`───\nAucun membre n'a pu s'acquitter des frais d'entrée pour : **${prize}**.\n───`)
-                    .setColor('#2b2d31');
+                const failEmbed = new EmbedBuilder().setTitle('🎁 TIRAGE AVORTÉ').setDescription(`───\nAucun membre n'a pu s'acquitter des frais d'entrée pour : **${prize}**.\n───`).setColor('#1e1f22');
                 return interaction.editReply({ embeds: [failEmbed], components: [] });
             }
-
-            // Sélection du gagnant
             const winnerId = partArray[Math.floor(Math.random() * partArray.length)];
-
-            const winEmbed = new EmbedBuilder()
-                .setAuthor({ name: '🎁 KYO PROTOCOLE • RÉSULTATS' })
-                .setDescription(
-                    `───\n` +
-                    `**Lot remporté :** ${prize}\n` +
-                    `**Vainqueur officiel :** <@${winnerId}>\n` +
-                    `**Total des participants :** ${partArray.length}\n` +
-                    `───`
-                )
-                .setColor('#2b2d31');
-
+            const winEmbed = new EmbedBuilder().setAuthor({ name: '🎁 KYO PROTOCOLE • RÉSULTATS' }).setDescription(`───\n**Lot remporté :** ${prize}\n**Vainqueur officiel :** <@${winnerId}>\n**Total des participants :** ${partArray.length}\n───`).setColor('#1e1f22');
             await interaction.editReply({ embeds: [winEmbed], components: [] });
             await interaction.followUp({ content: `🎉 Transmission terminée. <@${winnerId}> remporte l'accès à : **${prize}** !` });
         });
+    }
+
+    // 7. COMMANDE : /MUTE (ISOLEMENT DE 1 HEURE SANS VERIFICATION)
+    if (interaction.commandName === 'mute') {
+        const targetMember = interaction.options.getMember('cible');
+        const reason = interaction.options.getString('motif') || 'Violation des protocoles KYO';
+
+        if (!targetMember) {
+            return interaction.reply({ content: '✕ Utilisateur introuvable sur le réseau local.', ephemeral: true });
+        }
+
+        const durationMs = 60 * 60 * 1000; // 1 Heure
+
+        try {
+            // Frappe directe. Aucune vérification de rôle.
+            await targetMember.timeout(durationMs, reason);
+
+            const muteEmbed = new EmbedBuilder()
+                .setAuthor({ name: '◎ PROTOCOLE D\'ISOLEMENT ACTIVÉ' })
+                .setDescription(
+                    `───\n` +
+                    `**Cible :** <@${targetMember.id}>\n` +
+                    `**Durée :** 1 Heure\n` +
+                    `**Motif :** \`${reason}\`\n` +
+                    `───\n` +
+                    `*Le sujet a été déconnecté des canaux de communication.*`
+                )
+                .setColor('#1e1f22');
+
+            await interaction.reply({ embeds: [muteEmbed] });
+            
+        } catch (error) {
+            await interaction.reply({ content: '✕ Échec de la frappe. (Bloqué par Discord, cible intouchable).', ephemeral: true });
+        }
     }
 });
 
