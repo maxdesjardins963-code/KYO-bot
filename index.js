@@ -1,488 +1,336 @@
-require('dotenv').config();
 const { 
     Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, 
-    ButtonBuilder, ButtonStyle, SlashCommandBuilder, REST, Routes, 
-    ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder
+    ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, 
+    TextInputStyle, StringSelectMenuBuilder, REST, Routes 
 } = require('discord.js');
-const fs = require('fs');
-const express = require('express');
+require('dotenv').config();
 
-const client = new Client({ 
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers, GatewayIntentBits.MessageContent] 
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-// 🔴 TON ID DE ROLE STAFF ICI 🔴
-const STAFF_ROLE_ID = '1502765782960967861'; 
+// ID du rôle requis pour exécuter les commandes d'administration/lancement
+const REQUIRED_ROLE_ID = '1502765782960967861';
 
-// --- BASE DE DONNÉES ---
-const dbPath = './kyo_db.json';
-let db = { users: {} };
-if (fs.existsSync(dbPath)) { db = JSON.parse(fs.readFileSync(dbPath, 'utf8')); }
+// Base de données temporaire en mémoire (À remplacer par un système persistant en production si besoin)
+const userDatabase = new Map(); 
 
-function saveDB() { fs.writeFileSync(dbPath, JSON.stringify(db, null, 4)); }
-
-function addPoints(userId, amount) {
-    if (!db.users[userId]) db.users[userId] = { kyop: 0 };
-    db.users[userId].kyop += amount;
-    saveDB();
-}
-
-// --- SYSTÈME ANTI-SPAM & VARIABLES GLOBALES ---
-const usedInteractions = new Set(); // Stocke les actions déjà utilisées pour bloquer les doubles clics
-
-let activeGames = {
-    boss: { hp: 0, actif: false, msgId: null },
-    drapeau: { reponse: null, points: 0, actif: false },
-    math: { reponse: null, points: 0, actif: false },
-    mot: { reponse: null, points: 0, actif: false },
-    guerre: { red: new Set(), blue: new Set(), actif: false }, // Les Set() empêchent les joueurs d'être comptés 2 fois
-    heist: { players: new Set(), actif: false },
-    survie: { votes: {}, bonneRep: null, points: 0, actif: false }
+const getUserData = (id) => userDatabase.get(id) || { coins: 0, level: 1 };
+const updateUserData = (id, coinsAdd, levelAdd) => {
+    let data = getUserData(id);
+    data.coins += coinsAdd;
+    data.level += levelAdd;
+    userDatabase.set(id, data);
 };
 
-// --- ENREGISTREMENT DES COMMANDES ---
+// --- CONFIGURATION DES 5 COMMANDES SLASH ---
 const commands = [
-    new SlashCommandBuilder().setName('panel').setDescription('[STAFF] Afficher le grand guide explicatif des jeux'),
-    new SlashCommandBuilder().setName('giveaway').setDescription('[STAFF] Lance un grand giveaway de Kyo Points').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Le lot')).addIntegerOption(o=>o.setName('minutes').setRequired(true).setDescription('Durée')),
-    new SlashCommandBuilder().setName('remove').setDescription('[STAFF] Retirer des Kyo Points à un joueur').addUserOption(o=>o.setName('user').setRequired(true).setDescription('Joueur')).addIntegerOption(o=>o.setName('montant').setRequired(true).setDescription('Montant')),
-    new SlashCommandBuilder().setName('reset').setDescription('[STAFF] Réinitialiser à 0 les points d\'un joueur').addUserOption(o=>o.setName('user').setRequired(true).setDescription('Joueur')),
-    new SlashCommandBuilder().setName('drop').setDescription('[STAFF] Lâche un coffre').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    new SlashCommandBuilder().setName('boss').setDescription('[STAFF] Invoque un Boss').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')).addIntegerOption(o=>o.setName('pv').setRequired(true).setDescription('PV')),
-    new SlashCommandBuilder().setName('loto').setDescription('[STAFF] Lance un Loto express').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')).addIntegerOption(o=>o.setName('gagnant').setRequired(true).setDescription('Gagnant')).addIntegerOption(o=>o.setName('max').setRequired(true).setDescription('Max')),
-    new SlashCommandBuilder().setName('drapeau').setDescription('[STAFF] Quiz Drapeau').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')).addStringOption(o=>o.setName('emoji').setRequired(true).setDescription('Emoji')).addStringOption(o=>o.setName('pays').setRequired(true).setDescription('Pays')),
-    new SlashCommandBuilder().setName('math').setDescription('[STAFF] Calcul mental').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')).addStringOption(o=>o.setName('calcul').setRequired(true).setDescription('Calcul')).addIntegerOption(o=>o.setName('reponse').setRequired(true).setDescription('Réponse')),
-    new SlashCommandBuilder().setName('roulette').setDescription('[STAFF] Roulette Russe').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    new SlashCommandBuilder().setName('guerre').setDescription('[STAFF] Guerre Rouge vs Bleu (30s)').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    new SlashCommandBuilder().setName('sniper').setDescription('[STAFF] Test de réflexe').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    new SlashCommandBuilder().setName('bombe').setDescription('[STAFF] Démineur').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    new SlashCommandBuilder().setName('mot').setDescription('[STAFF] Dactylo inversé').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')).addStringOption(o=>o.setName('mot_inverse').setRequired(true).setDescription('Mot à l\'envers')).addStringOption(o=>o.setName('reponse').setRequired(true).setDescription('Réponse')),
-    new SlashCommandBuilder().setName('braquage').setDescription('[STAFF] Braquage collectif').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    new SlashCommandBuilder().setName('survie').setDescription('[STAFF] Jeu de survie').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')).addStringOption(o=>o.setName('question').setRequired(true).setDescription('Question')).addStringOption(o=>o.setName('bonne_rep').setRequired(true).setDescription('A ou B')),
-    new SlashCommandBuilder().setName('flash').setDescription('[STAFF] Tirage Éclair 15s').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    new SlashCommandBuilder().setName('chifoumi').setDescription('[STAFF] Chifoumi Bot').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    new SlashCommandBuilder().setName('jackpot').setDescription('[STAFF] Machine à sous').addIntegerOption(o=>o.setName('kyop').setRequired(true).setDescription('Lot')),
-    
-    new SlashCommandBuilder().setName('balance').setDescription('Voir ses Kyo Points (Public)').addUserOption(o=>o.setName('user').setDescription('Joueur').setRequired(false))
+    {
+        name: 'chiffre-devine',
+        description: '✦ Lancer une session de jeu Chiffre Devine',
+        options: [{
+            name: 'chiffre',
+            type: 4, // INTEGER
+            description: 'Le chiffre secret à deviner (1-50)',
+            required: true
+        }]
+    },
+    {
+        name: 'miniguerre-click',
+        description: '✦ Lancer une arène interactive de clics par équipe'
+    },
+    {
+        name: 'kyo-hub',
+        description: '✦ Faire apparaître le panel principal KYO HUB'
+    },
+    {
+        name: 'guide-kyo',
+        description: '✦ Déployer le guide officiel du serveur avec menu interactif'
+    },
+    {
+        name: 'kyo-give',
+        description: '✦ Ajouter des Kyo Coins à un utilisateur (Admin)',
+        options: [
+            { name: 'cible', type: 6, description: 'L\'utilisateur à créditer', required: true }, // USER
+            { name: 'montant', type: 4, description: 'Nombre de pièces', required: true } // INTEGER
+        ]
+    }
 ];
 
+// --- AUTO-DEPLOYMENT DES COMMANDES ---
 client.once('ready', async () => {
-    console.log(`✅ ${client.user.tag} est en ligne !`);
+    console.log(`📡 [KYO BOT] Connecté sur ${client.user.tag} (Mode Hybrid Connecté)`);
+    
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-});
-
-// ==========================================
-// ⚙️ GESTION DES COMMANDES (AVEC SÉCURITÉ)
-// ==========================================
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-
-    if (interaction.commandName === 'balance') {
-        const user = interaction.options.getUser('user') || interaction.user;
-        const pts = db.users[user.id]?.kyop || 0;
-        return interaction.reply(`💳 **${user.username}** possède **${pts} Kyo Points** 💠`);
-    }
-
-    // 🔒 SÉCURITÉ STAFF ABSOLUE : Stoppe toute personne sans le rôle
-    if (!interaction.member.roles.cache.has(STAFF_ROLE_ID)) {
-        return interaction.reply({ content: "⛔ **Accès refusé.** Tu n'es pas autorisé à utiliser les commandes Staff.", ephemeral: true });
-    }
-
-    const { commandName, options } = interaction;
-    const prize = options.getInteger('kyop') || 0;
-    const UID = Date.now().toString(); // Identifiant unique pour ce jeu
-
-    // MODÉRATION
-    if (commandName === 'remove') {
-        const targetUser = options.getUser('user');
-        const amount = options.getInteger('montant');
-        if (!db.users[targetUser.id]) db.users[targetUser.id] = { kyop: 0 };
-        db.users[targetUser.id].kyop = Math.max(0, db.users[targetUser.id].kyop - amount);
-        saveDB();
-        return interaction.reply(`📉 **Sanction :** **${amount} Kyo Points** retirés à **${targetUser.username}**.`);
-    }
-
-    if (commandName === 'reset') {
-        const targetUser = options.getUser('user');
-        if (db.users[targetUser.id]) {
-            db.users[targetUser.id].kyop = 0;
-            saveDB();
-        }
-        return interaction.reply(`🗑️ **Reset effectué :** Les points de **${targetUser.username}** sont à 0.`);
-    }
-
-    if (commandName === 'panel') {
-        const embed = new EmbedBuilder().setTitle("📜 GUIDE KYO").setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder().setCustomId('panel_guide_kyo').setPlaceholder('Voir les explications...').addOptions([
-                { label: 'Kyo Points', value: 'guide_kyop', emoji: '💠' },
-                { label: 'Raids & Boss', value: 'guide_boss', emoji: '👹' },
-                { label: 'Jeux', value: 'guide_games', emoji: '🎰' }
-            ])
+    try {
+        console.log('🔄 Actualisation des commandes applicatives (Slash)...');
+        await rest.put(
+            Routes.applicationCommands(process.env.CLIENT_ID || client.user.id),
+            { body: commands }
         );
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    // JEUX À BOUTON UNIQUE (Le premier clic détruit le bouton)
-    if (commandName === 'drop') {
-        const embed = new EmbedBuilder().setTitle("📦 COFFRE DROPPÉ !").setDescription(`Contient **${prize} Kyo Points** !\nPremier arrivé, premier servi !`).setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_drop_${prize}_${UID}`).setLabel('PILLER').setStyle(ButtonStyle.Success).setEmoji('💰'));
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    if (commandName === 'roulette') {
-        const embed = new EmbedBuilder().setTitle("🔫 ROULETTE RUSSE").setDescription(`Survie : +${prize} Points\nÉchec : -50% de tes points.`).setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_roulette_${prize}_${UID}`).setLabel('TIRER').setStyle(ButtonStyle.Danger));
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    if (commandName === 'bombe') {
-        const embed = new EmbedBuilder().setTitle("💣 BOMBE ACTIVE").setDescription(`Coupe le fil. Réussite : +${prize} Points | Échec : -100 Points.`).setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_bombe_${prize}_${UID}`).setLabel('Couper ✂️').setStyle(ButtonStyle.Primary));
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    if (commandName === 'chifoumi') {
-        const embed = new EmbedBuilder().setTitle("✊✋✌️ CHIFOUMI").setDescription(`Battez le bot pour **${prize} Points** !`).setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`action_rps_p_${prize}_${UID}`).setLabel('PIERRE ✊').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`action_rps_f_${prize}_${UID}`).setLabel('PAPIER ✋').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId(`action_rps_c_${prize}_${UID}`).setLabel('CISEAUX ✌️').setStyle(ButtonStyle.Secondary)
-        );
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    if (commandName === 'jackpot') {
-        const embed = new EmbedBuilder().setTitle("🎰 JACKPOT").setDescription(`3 symboles identiques = **${prize} Points** !`).setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_jackpot_${prize}_${UID}`).setLabel('LEVIER 🎰').setStyle(ButtonStyle.Primary));
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    if (commandName === 'loto') {
-        const max = options.getInteger('max');
-        const win = options.getInteger('gagnant');
-        const embed = new EmbedBuilder().setTitle("🎰 LOTO EXPRESS").setDescription(`Chiffre mystère entre **1 et ${max}** pour **${prize} Points** !`).setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_loto_${win}_${max}_${prize}_${UID}`).setLabel('Tenter 🎫').setStyle(ButtonStyle.Primary));
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    // JEUX À DÉLAI ET SPAM 
-    if (commandName === 'sniper') {
-        await interaction.reply({ content: "🎯 *Préparez-vous...*", fetchReply: true });
-        setTimeout(async () => {
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_sniper_${prize}_${UID}`).setLabel('🔥 TIREZ !').setStyle(ButtonStyle.Danger));
-            await interaction.channel.send({ content: "💥", components: [row] });
-        }, Math.floor(Math.random() * 6000) + 3000);
-        return;
-    }
-
-    if (commandName === 'boss') {
-        activeGames.boss = { hp: options.getInteger('pv'), actif: true, msgId: UID };
-        const embed = new EmbedBuilder().setTitle("👹 BOSS DE RAID !").setDescription(`**PV :** ${activeGames.boss.hp}\nLe coup fatal remporte **${prize} Points** !`).setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`action_boss_${prize}_${UID}`).setLabel('FRAPPER ⚔️').setStyle(ButtonStyle.Danger));
-        return interaction.reply({ embeds: [embed], components: [row] });
-    }
-
-    // JEUX COLLECTIFS
-    if (commandName === 'guerre') {
-        activeGames.guerre = { red: new Set(), blue: new Set(), actif: true };
-        const embed = new EmbedBuilder().setTitle("⚔️ GUERRE (30s)").setDescription(`Chaque gagnant prend **${prize} Points** !`).setColor('#2b2d31');
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`action_war_red_${prize}`).setLabel('ROUGE 🔴').setStyle(ButtonStyle.Danger),
-            new ButtonBuilder().setCustomId(`action_war_blue_${prize}`).setLabel('BLEU 🔵').setStyle(ButtonStyle.Primary)
-        );
-        const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
-        
-        setTimeout(async () => {
-            activeGames.guerre.actif = false;
-            const rCount = activeGames.guerre.red.size;
-            const bCount = activeGames.guerre.blue.size;
-            let winners = [];
-            let txt = "Égalité !";
-            if (rCount > bCount) { winners = Array.from(activeGames.guerre.red); txt = `🔴 Victoire ROUGE (${rCount} vs ${bCount}) !`; }
-            else if (bCount > rCount) { winners = Array.from(activeGames.guerre.blue); txt = `🔵 Victoire BLEU (${bCount} vs ${rCount}) !`; }
-            
-            winners.forEach(id => addPoints(id, prize));
-            await msg.edit({ content: `🏁 **FIN !** ${txt}`, embeds: [], components: [] });
-        }, 30000);
-        return;
-    }
-
-    if (commandName === 'braquage') {
-        activeGames.heist = { players: new Set(), actif: true };
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('action_heist_join').setLabel('Rejoindre le Van 🚔').setStyle(ButtonStyle.Secondary));
-        const msg = await interaction.reply({ content: `💰 **BRAQUAGE (20s)**\nSi on réussit, chaque joueur prend **${prize} Points** !`, components: [row], fetchReply: true });
-        
-        setTimeout(async () => {
-            activeGames.heist.actif = false;
-            if (activeGames.heist.players.size === 0) return msg.edit({ content: "❌ Annulé, personne n'est venu.", components: [] });
-            
-            if (Math.random() < 0.55) {
-                Array.from(activeGames.heist.players).forEach(id => addPoints(id, prize));
-                await msg.edit({ content: `✅ **RÉUSSITE !** Tous les braqueurs s'enfuient avec **${prize} Points** !`, components: [] });
-            } else {
-                await msg.edit({ content: `🚨 **ÉCHEC !** Arrêtés par la police, 0 point.`, components: [] });
-            }
-        }, 20000);
-        return;
-    }
-
-    if (commandName === 'survie') {
-        activeGames.survie = { votes: {}, bonneRep: options.getString('bonne_rep').toUpperCase(), points: prize, actif: true };
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('action_survie_A').setLabel('Option A').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('action_survie_B').setLabel('Option B').setStyle(ButtonStyle.Danger)
-        );
-        const msg = await interaction.reply({ content: `💀 **SURVIE (25s)**\n${options.getString('question')}`, components: [row], fetchReply: true });
-        
-        setTimeout(async () => {
-            activeGames.survie.actif = false;
-            let gagnants = [];
-            for (const [uid, vote] of Object.entries(activeGames.survie.votes)) {
-                if (vote === activeGames.survie.bonneRep) gagnants.push(uid);
-            }
-            gagnants.forEach(id => addPoints(id, prize));
-            await msg.edit({ content: `🏁 **FIN !** La bonne réponse était **${activeGames.survie.bonneRep}**.\nFélicitations aux survivants !`, components: [] });
-        }, 25000);
-        return;
-    }
-
-    if (commandName === 'flash') {
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('action_flash_join').setLabel('PARTICIPER').setStyle(ButtonStyle.Success));
-        const msg = await interaction.reply({ content: `⚡ **TIRAGE FLASH 15s !** (Lot : ${prize} Points)`, components: [row], fetchReply: true });
-        
-        let inscrits = new Set();
-        const collector = msg.createMessageComponentCollector({ time: 15000 });
-        collector.on('collect', async i => { inscrits.add(i.user.id); await i.reply({ content: "✅ Inscrit !", ephemeral: true }); });
-        collector.on('end', async () => {
-            const arr = Array.from(inscrits);
-            if (arr.length === 0) return msg.edit({ content: "⏳ Aucun participant.", components: [] });
-            const winner = arr[Math.floor(Math.random() * arr.length)];
-            addPoints(winner, prize);
-            await msg.edit({ content: `🎉 Flash terminé ! <@${winner}> gagne **${prize} Points** !`, components: [] });
-        });
-        return;
-    }
-
-    if (commandName === 'giveaway') {
-        const minutes = options.getInteger('minutes');
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('action_gw_join').setLabel('Participer 🎉').setStyle(ButtonStyle.Success));
-        const msg = await interaction.reply({ content: `🎉 **GIVEAWAY DE ${prize} POINTS !**\n⏳ Fin dans ${minutes} minute(s).`, components: [row], fetchReply: true });
-
-        let participants = new Set();
-        const collector = msg.createMessageComponentCollector({ time: minutes * 60 * 1000 });
-        collector.on('collect', async i => {
-            if (participants.has(i.user.id)) return i.reply({ content: "⚠️ Tu es déjà inscrit !", ephemeral: true });
-            participants.add(i.user.id);
-            await i.reply({ content: "✅ Inscription validée !", ephemeral: true });
-        });
-        collector.on('end', async () => {
-            const arr = Array.from(participants);
-            if (arr.length === 0) return msg.edit({ content: "❌ Giveaway annulé (0 participant).", components: [] });
-            const winnerId = arr[Math.floor(Math.random() * arr.length)];
-            addPoints(winnerId, prize);
-            await msg.edit({ content: `🎉 **GIVEAWAY TERMINÉ !**\nBravo à <@${winnerId}> qui remporte **${prize} Kyo Points** !`, components: [] });
-        });
-        return;
-    }
-
-    // JEUX DE CHAT PUR
-    if (commandName === 'drapeau') {
-        activeGames.drapeau = { reponse: options.getString('pays').toLowerCase(), points: prize, actif: true };
-        return interaction.reply(`🌍 Trouvez le pays : ${options.getString('emoji')} (Lot: ${prize} pts)`);
-    }
-    if (commandName === 'math') {
-        activeGames.math = { reponse: options.getInteger('reponse').toString(), points: prize, actif: true };
-        return interaction.reply(`🧠 Calculez : **${options.getString('calcul')}** (Lot: ${prize} pts)`);
-    }
-    if (commandName === 'mot') {
-        activeGames.mot = { reponse: options.getString('reponse').toLowerCase(), points: prize, actif: true };
-        return interaction.reply(`🔤 Remettez ce mot à l'endroit : **${options.getString('mot_inverse')}** (Lot: ${prize} pts)`);
+        console.log('✅ Toutes les commandes Slash ont été injectées avec succès.');
+    } catch (error) {
+        console.error('❌ Erreur lors du déploiement des commandes:', error);
     }
 });
 
-// ==========================================
-// 🛡️ SYSTÈME DE RÉPONSES AUX BOUTONS AVEC VERROUILLAGE ANTI-SPAM
-// ==========================================
+// --- ROUTEUR PRINCIPAL DES INTERACTIONS ---
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
-    const id = interaction.customId;
-    const args = id.split('_');
-    const UID = args[args.length - 1]; // Récupère le code unique à la fin de l'ID
-
-    // VÉRIFICATION ANTI DOUBLE-CLIC (Le composant est "brûlé" après 1 usage)
-    const singleUseGames = ['drop', 'sniper', 'bombe', 'roulette', 'rps', 'jackpot'];
-    if (singleUseGames.some(game => id.includes(game))) {
-        if (usedInteractions.has(UID)) {
-            return interaction.reply({ content: "⏱️ Trop tard, cette action a déjà été effectuée par quelqu'un d'autre !", ephemeral: true });
-        }
-        usedInteractions.add(UID); // Verrouille le bouton instantanément
-    }
-
-    if (id.startsWith('action_drop_')) {
-        const pts = parseInt(args[2]);
-        addPoints(interaction.user.id, pts);
-        return interaction.update({ content: `🎉 **Looté !** <@${interaction.user.id}> a ouvert le coffre et gagne **${pts} Points** !`, embeds: [], components: [] });
-    }
-
-    if (id.startsWith('action_sniper_')) {
-        const pts = parseInt(args[2]);
-        addPoints(interaction.user.id, pts);
-        return interaction.update({ content: `🎯 **HEADSHOT !** <@${interaction.user.id}> a tiré le premier et prend **${pts} Points** !`, components: [] });
-    }
-
-    if (id.startsWith('action_bombe_')) {
-        const pts = parseInt(args[2]);
-        if (Math.random() < 0.25) {
-            if (db.users[interaction.user.id]) db.users[interaction.user.id].kyop = Math.max(0, db.users[interaction.user.id].kyop - 100);
-            saveDB();
-            return interaction.update({ content: `💥 **BOOM !** <@${interaction.user.id}> s'est fait sauter avec la bombe (-100 pts).`, embeds: [], components: [] });
-        } else {
-            addPoints(interaction.user.id, pts);
-            return interaction.update({ content: `🟢 **DÉMORCÉ !** <@${interaction.user.id}> a coupé le bon fil : **+${pts} Points** !`, embeds: [], components: [] });
-        }
-    }
-
-    if (id.startsWith('action_roulette_')) {
-        const pts = parseInt(args[2]);
-        if (Math.random() < 0.166) { 
-            if (db.users[interaction.user.id]) db.users[interaction.user.id].kyop = Math.floor(db.users[interaction.user.id].kyop / 2);
-            saveDB();
-            return interaction.update({ content: `💥 **PAN !** <@${interaction.user.id}> a perdu la moitié de ses points.`, embeds: [], components: [] });
-        } else {
-            addPoints(interaction.user.id, pts);
-            return interaction.update({ content: `🍀 *Clic...* <@${interaction.user.id}> survit et encaisse **${pts} Points**.`, embeds: [], components: [] });
-        }
-    }
-
-    if (id.startsWith('action_rps_')) {
-        const choice = args[2];
-        const pts = parseInt(args[3]);
-        const rps = ['p', 'f', 'c'];
-        const botPlay = rps[Math.floor(Math.random() * 3)];
-        let res = "Égalité ! L'action a été annulée.";
-        
-        if ((choice === 'p' && botPlay === 'c') || (choice === 'f' && botPlay === 'p') || (choice === 'c' && botPlay === 'f')) {
-            addPoints(interaction.user.id, pts);
-            res = `🎉 <@${interaction.user.id}> a gagné contre le bot et remporte **${pts} Points** !`;
-        } else if (choice !== botPlay) {
-            res = `❌ <@${interaction.user.id}> a perdu contre le bot.`;
-        }
-        return interaction.update({ content: res, embeds: [], components: [] });
-    }
-
-    if (id.startsWith('action_jackpot_')) {
-        const pts = parseInt(args[2]);
-        const items = ['🍎', '💎', '🍋', '🔔', '🍀'];
-        const [r1, r2, r3] = [items[Math.floor(Math.random()*5)], items[Math.floor(Math.random()*5)], items[Math.floor(Math.random()*5)]];
-        if (r1 === r2 && r2 === r3) {
-            addPoints(interaction.user.id, pts);
-            return interaction.update({ content: `🎰 **[ ${r1} | ${r2} | ${r3} ]**\n🏆 **JACKPOT !** <@${interaction.user.id}> gagne **${pts} Points** !`, embeds: [], components: [] });
-        } else {
-            return interaction.update({ content: `🎰 **[ ${r1} | ${r2} | ${r3} ]**\n❌ <@${interaction.user.id}> a perdu au casino.`, embeds: [], components: [] });
-        }
-    }
-
-    // SPAM BOUTONS MULTIPLES (Mais sécurisés)
-    if (id.startsWith('action_boss_')) {
-        if (!activeGames.boss.actif || activeGames.boss.msgId !== UID) return interaction.reply({ content: "❌ Le combat est terminé !", ephemeral: true });
-        
-        activeGames.boss.hp -= Math.floor(Math.random() * 12) + 4;
-        
-        if (activeGames.boss.hp <= 0 && activeGames.boss.actif) {
-            activeGames.boss.actif = false; // Verrouille instantanément pour éviter le double loot
-            const pts = parseInt(args[2]);
-            addPoints(interaction.user.id, pts);
-            return interaction.update({ content: `💀 **MONSTRE TERRASSÉ !** <@${interaction.user.id}> donne le coup de grâce et prend **${pts} Points** !`, embeds: [], components: [] });
-        } else {
-            return interaction.reply({ content: `⚔️ PV restants du Boss : **${activeGames.boss.hp}**.`, ephemeral: true });
-        }
-    }
-
-    if (id.startsWith('action_war_')) {
-        const team = args[2];
-        if (!activeGames.guerre.actif) return interaction.reply({ content: "La guerre est finie !", ephemeral: true });
-        if (team === 'red') activeGames.guerre.red.add(interaction.user.id);
-        if (team === 'blue') activeGames.guerre.blue.add(interaction.user.id);
-        return interaction.reply({ content: "⚔️ Position validée !", ephemeral: true });
-    }
-
-    if (id === 'action_heist_join') {
-        if (!activeGames.heist.actif) return interaction.reply({ content: "Le van est déjà parti !", ephemeral: true });
-        activeGames.heist.players.add(interaction.user.id);
-        return interaction.reply({ content: "💼 Tu es prêt pour le casse.", ephemeral: true });
-    }
-
-    if (id.startsWith('action_survie_')) {
-        const vote = args[2];
-        if (!activeGames.survie.actif) return interaction.reply({ content: "Le temps est écoulé !", ephemeral: true });
-        activeGames.survie.votes[interaction.user.id] = vote;
-        return interaction.reply({ content: `Choix **${vote}** validé.`, ephemeral: true });
-    }
-
-    // GESTION LOTO
-    if (id.startsWith('action_loto_')) {
-        if (usedInteractions.has(UID)) return interaction.reply({ content: "⏱️ Le loto a déjà été trouvé !", ephemeral: true });
-        const win = args[2], max = args[3], pts = args[4];
-        const modal = new ModalBuilder().setCustomId(`modal_loto_${win}_${pts}_${UID}`).setTitle('Loto');
-        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('choice').setLabel(`Entre 1 et ${max}`).setStyle(TextInputStyle.Short).setRequired(true)));
-        await interaction.showModal(modal);
-    }
-});
-
-// GESTION MODAL LOTO
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isModalSubmit() || !interaction.customId.startsWith('modal_loto_')) return;
     
-    const args = interaction.customId.split('_');
-    const winNum = args[2], pts = parseInt(args[3]), UID = args[4];
-    const ans = interaction.fields.getTextInputValue('choice').trim();
-    
-    if (usedInteractions.has(UID)) return interaction.reply({ content: "❌ Quelqu'un d'autre a déjà trouvé la réponse !", ephemeral: true });
+    // FILTRE DE SÉCURITÉ STRICT : Vérification du rôle requis pour TOUTES les commandes slash
+    if (interaction.isChatInputCommand()) {
+        if (!interaction.member.roles.cache.has(REQUIRED_ROLE_ID)) {
+            return interaction.reply({ 
+                content: `✕ **Accès refusé.** Cette commande nécessite le privilège de commandement de la faction KYO.`, 
+                ephemeral: true 
+            });
+        }
+    }
 
-    if (ans === winNum) {
-        usedInteractions.add(UID); // Verrouille le loto
-        addPoints(interaction.user.id, pts);
-        return interaction.reply(`🎰 **NUMÉRO EXACT !** <@${interaction.user.id}> a démasqué le **${winNum}** et gagne **${pts} Points** !`);
-    } else {
-        return interaction.reply({ content: `❌ Faux !`, ephemeral: true });
+    // 1. COMMANDE : /CHIFFRE-DEVINE
+    if (interaction.commandName === 'chiffre-devine') {
+        const secretValue = interaction.options.getInteger('chiffre');
+        if (secretValue < 1 || secretValue > 50) {
+            return interaction.reply({ content: '✕ Le chiffre doit impérativement être compris entre 1 et 50.', ephemeral: true });
+        }
+
+        const gameEmbed = new EmbedBuilder()
+            .setAuthor({ name: 'KYO PROTOCOLE • CHIFFRE DEVINE' })
+            .setDescription(
+                "───\n" +
+                "Un nombre secret a été généré par l'administration.\n" +
+                "Aurez-vous l'instinct nécessaire pour le découvrir ?\n\n" +
+                "**Règle :** Cliquez sur le bouton ci-dessous et proposez un chiffre entre **1 et 50**.\n" +
+                "**Fin du protocole :** <t:" + Math.floor((Date.now() + 30000) / 1000) + ":R>\n" +
+                "───"
+            )
+            .setColor('#1e1f22');
+
+        const triggerRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('guess_action').setLabel('Tentez ma chance').setStyle(ButtonStyle.Secondary)
+        );
+
+        const promptMessage = await interaction.reply({ embeds: [gameEmbed], components: [triggerRow], fetchReply: true });
+        
+        const submissions = new Map();
+        const componentCollector = promptMessage.createMessageComponentCollector({ time: 30000 });
+
+        componentCollector.on('collect', async btnInteraction => {
+            if (btnInteraction.customId === 'guess_action') {
+                const modal = new ModalBuilder().setCustomId(`modal_${btnInteraction.id}`).setTitle('Estimation Secrète');
+                const field = new TextInputBuilder()
+                    .setCustomId('user_number')
+                    .setLabel('Entrez votre valeur (1-50)')
+                    .setStyle(TextInputStyle.Short)
+                    .setMinLength(1)
+                    .setMaxLength(2)
+                    .setRequired(true);
+
+                modal.addComponents(new ActionRowBuilder().addComponents(field));
+                await btnInteraction.showModal(modal);
+
+                const modalSubmit = await btnInteraction.awaitModalSubmit({ time: 15000 }).catch(() => null);
+                if (modalSubmit) {
+                    const chosenNum = parseInt(modalSubmit.fields.getTextInputValue('user_number'));
+                    if (isNaN(chosenNum) || chosenNum < 1 || chosenNum > 50) {
+                        await modalSubmit.reply({ content: '✕ Donnée invalide. Répétez l\'action avec un chiffre correct.', ephemeral: true });
+                    } else {
+                        submissions.set(modalSubmit.user.id, chosenNum);
+                        await modalSubmit.reply({ content: `✓ Enregistré : Option **${chosenNum}** prise en compte.`, ephemeral: true });
+                    }
+                }
+            }
+        });
+
+        componentCollector.on('end', async () => {
+            let winnersList = [];
+            submissions.forEach((guess, user) => {
+                if (guess === secretValue) {
+                    winnersList.push(`<@${user}>`);
+                    updateUserData(user, 100, 0); // Bonus automatique de 100 points
+                }
+            });
+
+            const closingEmbed = new EmbedBuilder()
+                .setTitle('◎ RÉSULTATS DU PROTOCOLE')
+                .setDescription(
+                    `Le numéro requis pour la victoire était : **${secretValue}**\n\n` +
+                    `${winnersList.length > 0 ? `✦ **Gagnants de la session :**\n└ ${winnersList.join(', ')} (+100 Kyo Coins)` : '└ Aucun sujet n\'a trouvé la configuration exacte.'}`
+                )
+                .setColor('#2b2d31');
+
+            await interaction.editReply({ embeds: [closingEmbed], components: [] });
+        });
+    }
+
+    // 2. COMMANDE : /MINIGUERRE-CLICK
+    if (interaction.commandName === 'miniguerre-click') {
+        const pool = new Map();
+        const scores = { blue: 0, white: 0 };
+
+        const setupEmbed = new EmbedBuilder()
+            .setTitle('⚔️ ALLIANCE ENRÔLEMENT • MINI GUERRE')
+            .setDescription("Sélectionnez votre faction immédiatement.\nDéploiement des modules de combat dans **20 secondes**.")
+            .setColor('#1e1f22');
+
+        const setupRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('join_b').setLabel('Division Bleue').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('join_w').setLabel('Division Blanche').setStyle(ButtonStyle.Secondary)
+        );
+
+        const warMessage = await interaction.reply({ embeds: [setupEmbed], components: [setupRow], fetchReply: true });
+
+        const setupCollector = warMessage.createMessageComponentCollector({ time: 20000 });
+        setupCollector.on('collect', i => {
+            pool.set(i.user.id, i.customId === 'join_b' ? 'blue' : 'white');
+            i.reply({ content: `✓ Intégration confirmée dans l'équipe ${i.customId === 'join_b' ? 'Bleue' : 'Blanche'}.`, ephemeral: true });
+        });
+
+        setupCollector.on('end', async () => {
+            const combatEmbed = new EmbedBuilder()
+                .setTitle('⚔️ PROTOCOLE DE FRAPPE ACTIVÉ')
+                .setDescription("Cliquez de manière intensive sur votre module assigné.\n**Temps restant :** 25 secondes.")
+                .setColor('#5865F2');
+
+            const combatRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('hit_b').setLabel('Impact Bleu').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId('hit_w').setLabel('Impact Blanc').setStyle(ButtonStyle.Secondary)
+            );
+
+            await interaction.editReply({ embeds: [combatEmbed], components: [combatRow] });
+
+            const combatCollector = warMessage.createMessageComponentCollector({ time: 25000 });
+            combatCollector.on('collect', i => {
+                const assignedTeam = pool.get(i.user.id);
+                if (!assignedTeam) return i.reply({ content: "✕ Vous n'avez pas rejoint de faction pendant la phase d'enrôlement.", ephemeral: true });
+
+                if (assignedTeam === 'blue' && i.customId === 'hit_b') scores.blue++;
+                if (assignedTeam === 'white' && i.customId === 'hit_w') scores.white++;
+                i.deferUpdate();
+            });
+
+            combatCollector.on('end', async () => {
+                let winSummary = "Égalité parfaite sur le champ de tir.";
+                if (scores.blue > scores.white) winSummary = "Victoire stratégique de la **Division Bleue** !";
+                if (scores.white > scores.blue) winSummary = "Victoire stratégique de la **Division Blanche** !";
+
+                // Distribution des récompenses aux vainqueurs
+                const ultimateWinner = scores.blue > scores.white ? 'blue' : (scores.white > scores.blue ? 'white' : null);
+                if (ultimateWinner) {
+                    pool.forEach((team, userId) => {
+                        if (team === ultimateWinner) updateUserData(userId, 50, 1);
+                    });
+                }
+
+                const reportEmbed = new EmbedBuilder()
+                    .setTitle('🏁 RAPPORT DE FIN DE GUERRE')
+                    .setDescription(
+                        `**Statistiques globales :**\n` +
+                        `├ Clics Division Bleue : \`${scores.blue}\`\n` +
+                        `└ Clics Division Blanche : \`${scores.white}\`\n\n` +
+                        `**Résultat :** ${winSummary}\n*Les vainqueurs reçoivent +50 Kyo Coins et +1 Level.*`
+                    )
+                    .setColor('#2b2d31');
+
+                await interaction.editReply({ embeds: [reportEmbed], components: [] });
+            });
+        });
+    }
+
+    // 3. COMMANDE : /PUT THE KYO HUB
+    if (interaction.commandName === 'kyo-hub') {
+        const hubMain = new EmbedBuilder()
+            .setAuthor({ name: 'KYO NETWORK • INTERFACE INTERNE', iconURL: client.user.displayAvatarURL() })
+            .setDescription(
+                "───\n" +
+                "**◎ ACQUISITION DE FLUX**\n" +
+                "└ Générez de l'activité textuelle pour collecter des **Kyo Points**.\n\n" +
+                "**◎ MODULES D'ANALYSE**\n" +
+                "└ Obtenez une vision directe de votre rang et de vos finances.\n" +
+                "└ Échangez vos gains lors des déploiements d'événements.\n" +
+                "───\n" +
+                "*Utilisez le terminal sécurisé ci-dessous pour ouvrir vos paramètres système.*"
+            )
+            .setColor('#1e1f22');
+
+        const hubRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('trigger_profile').setLabel('Ouvrir mon profil').setStyle(ButtonStyle.Primary)
+        );
+
+        await interaction.reply({ embeds: [hubMain], components: [hubRow] });
+    }
+
+    // Intercepteur pour le bouton du KYO HUB
+    if (interaction.isButton() && interaction.customId === 'trigger_profile') {
+        const currentStats = getUserData(interaction.user.id);
+        
+        const profilePanel = new EmbedBuilder()
+            .setAuthor({ name: `DOSSIER PERSONNEL • ${interaction.user.username.toUpperCase()}` })
+            .setDescription(
+                `───\n` +
+                `💰 **Kyo Coins :** \` ${currentStats.coins} \` \n\n` +
+                `📈 **Kyo Level :** \` Nv. ${currentStats.level} \` \n` +
+                `───`
+            )
+            .setColor('#5865F2')
+            .setFooter({ text: 'Données chiffrées en temps réel' });
+
+        await interaction.reply({ embeds: [profilePanel], ephemeral: true });
+    }
+
+    // 4. COMMANDE : /GUIDE-KYO
+    if (interaction.commandName === 'guide-kyo') {
+        const masterGuide = new EmbedBuilder()
+            .setTitle('◎ GUIDE CENTRAL KYO')
+            .setDescription(
+                "Bienvenue sur l'infrastructure d'assistance.\n\n" +
+                "Pour préserver le confort visuel global, veuillez utiliser le menu déroulant ci-dessous afin de cibler les données requises."
+            )
+            .setColor('#1e1f22');
+
+        const menuSelector = new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder()
+                .setCustomId('guide_router')
+                .setPlaceholder('Choisir une section du guide')
+                .addOptions([
+                    { label: 'Gagner des Kyo Coins', value: 'g_coins', description: 'Comprendre l\'algorithme d\'activité' },
+                    { label: 'Exploiter le Kyo Hub', value: 'g_hub', description: 'Analyser la progression et le profil' },
+                    { label: 'Règlement Intra-Serveur', value: 'g_rules', description: 'Les lois de la communauté' }
+                ])
+        );
+
+        await interaction.reply({ embeds: [masterGuide], components: [menuSelector] });
+    }
+
+    // Intercepteur pour le Menu Déroulant du Guide
+    if (interaction.isStringSelectMenu() && interaction.customId === 'guide_router') {
+        let outputMessage = "";
+        const targetSelection = interaction.values[0];
+
+        if (targetSelection === 'g_coins') {
+            outputMessage = "✦ **Gagner des Kyo Coins :** Vos interactions régulières dans les zones de discussion génèrent passivement des crédits de monnaie.";
+        } else if (targetSelection === 'g_hub') {
+            outputMessage = "✦ **Exploiter le Kyo Hub :** Via le panel principal, vous pouvez à tout moment charger votre base de données privée pour vérifier votre niveau de puissance.";
+        } else if (targetSelection === 'g_rules') {
+            outputMessage = "✦ **Règlement :** Tout comportement en désaccord avec la charte KYO provoquera une réinitialisation unilatérale de vos compteurs.";
+        }
+
+        await interaction.reply({ content: outputMessage, ephemeral: true });
+    }
+
+    // 5. COMMANDE : /KYO-GIVE (ADMIN)
+    if (interaction.commandName === 'kyo-give') {
+        const targetUser = interaction.options.getUser('cible');
+        const amountToGive = interaction.options.getInteger('montant');
+
+        updateUserData(targetUser.id, amountToGive, 0);
+
+        await interaction.reply({ 
+            content: `✓ Injection effectuée avec succès. **${amountToGive} Kyo Coins** ont été versés sur le compte de ${targetUser}.`, 
+            ephemeral: true 
+        });
     }
 });
 
-// MENU GUIDE EXPLICATIF
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isStringSelectMenu() || interaction.customId !== 'panel_guide_kyo') return;
-    const choice = interaction.values[0];
-    let embed = new EmbedBuilder().setColor('#2b2d31');
-
-    if (choice === 'guide_kyop') embed.setTitle("💠 SYSTÈME DE KYO POINTS").setDescription("Les points récompensent ta présence. Seul le staff les distribue.");
-    else if (choice === 'guide_boss') embed.setTitle("👹 RAIDS BOSS").setDescription("Spammez le bouton ! Celui qui donne le dernier coup remporte le lot complet.");
-    else if (choice === 'guide_games') embed.setTitle("🎰 MINI-JEUX").setDescription("Soyez le plus rapide sur les boutons et dans le chat pour rafler la mise.");
-
-    return interaction.reply({ embeds: [embed], ephemeral: true });
-});
-
-// GESTION JEUX DANS LE CHAT (Drapeau, Math, Mot)
-client.on('messageCreate', async message => {
-    if (message.author.bot) return;
-
-    if (activeGames.drapeau.actif && message.content.toLowerCase() === activeGames.drapeau.reponse) {
-        activeGames.drapeau.actif = false;
-        addPoints(message.author.id, activeGames.drapeau.points);
-        return message.reply(`🌍 **RÉPONSE COMPLÈTE !** Bravo <@${message.author.id}>, c'était **${message.content}**. Gain : **${activeGames.drapeau.points} pts** !`);
-    }
-    if (activeGames.math.actif && message.content.trim() === activeGames.math.reponse) {
-        activeGames.math.actif = false;
-        addPoints(message.author.id, activeGames.math.points);
-        return message.reply(`🧠 **GÉNIE !** <@${message.author.id}> valide en premier. Gain : **${activeGames.math.points} pts** !`);
-    }
-    if (activeGames.mot.actif && message.content.toLowerCase() === activeGames.mot.reponse) {
-        activeGames.mot.actif = false;
-        addPoints(message.author.id, activeGames.mot.points);
-        return message.reply(`🔤 **Dactylo !** <@${message.author.id}> trouve en premier. Gain : **${activeGames.mot.points} pts** !`);
-    }
-});
-
-const app = express();
-app.listen(process.env.PORT || 3000);
+// Connexion globale sécurisée
 client.login(process.env.TOKEN);
