@@ -3,7 +3,19 @@ const {
     ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, 
     TextInputStyle, StringSelectMenuBuilder, REST, Routes 
 } = require('discord.js');
+const http = require('http'); // Ajout du module HTTP natif de Node.js
 require('dotenv').config();
+
+// --- CRÉATION DU FAUX SERVEUR WEB POUR RENDER ---
+// Cela empêche l'erreur "Port scan timeout reached"
+const port = process.env.PORT || 3000;
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.write('KYO BOT: HYBRID UPDATE - SYSTÈME EN LIGNE');
+    res.end();
+}).listen(port, () => {
+    console.log(`🌐 [RENDER FIX] Serveur Web factice activé sur le port ${port}`);
+});
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -12,7 +24,7 @@ const client = new Client({
 // ID du rôle requis pour exécuter les commandes d'administration/lancement
 const REQUIRED_ROLE_ID = '1502765782960967861';
 
-// Base de données temporaire en mémoire (À remplacer par un système persistant en production si besoin)
+// Base de données temporaire en mémoire
 const userDatabase = new Map(); 
 
 const getUserData = (id) => userDatabase.get(id) || { coins: 0, level: 1 };
@@ -30,7 +42,7 @@ const commands = [
         description: '✦ Lancer une session de jeu Chiffre Devine',
         options: [{
             name: 'chiffre',
-            type: 4, // INTEGER
+            type: 4, 
             description: 'Le chiffre secret à deviner (1-50)',
             required: true
         }]
@@ -51,14 +63,15 @@ const commands = [
         name: 'kyo-give',
         description: '✦ Ajouter des Kyo Coins à un utilisateur (Admin)',
         options: [
-            { name: 'cible', type: 6, description: 'L\'utilisateur à créditer', required: true }, // USER
-            { name: 'montant', type: 4, description: 'Nombre de pièces', required: true } // INTEGER
+            { name: 'cible', type: 6, description: 'L\'utilisateur à créditer', required: true }, 
+            { name: 'montant', type: 4, description: 'Nombre de pièces', required: true } 
         ]
     }
 ];
 
 // --- AUTO-DEPLOYMENT DES COMMANDES ---
-client.once('ready', async () => {
+// Correction du "ready" en "clientReady" pour éviter l'avertissement DeprecationWarning de Discord.js v14/v15
+client.once('clientReady', async () => {
     console.log(`📡 [KYO BOT] Connecté sur ${client.user.tag} (Mode Hybrid Connecté)`);
     
     const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
@@ -77,7 +90,7 @@ client.once('ready', async () => {
 // --- ROUTEUR PRINCIPAL DES INTERACTIONS ---
 client.on('interactionCreate', async interaction => {
     
-    // FILTRE DE SÉCURITÉ STRICT : Vérification du rôle requis pour TOUTES les commandes slash
+    // FILTRE DE SÉCURITÉ STRICT
     if (interaction.isChatInputCommand()) {
         if (!interaction.member.roles.cache.has(REQUIRED_ROLE_ID)) {
             return interaction.reply({ 
@@ -147,7 +160,7 @@ client.on('interactionCreate', async interaction => {
             submissions.forEach((guess, user) => {
                 if (guess === secretValue) {
                     winnersList.push(`<@${user}>`);
-                    updateUserData(user, 100, 0); // Bonus automatique de 100 points
+                    updateUserData(user, 100, 0); 
                 }
             });
 
@@ -214,7 +227,6 @@ client.on('interactionCreate', async interaction => {
                 if (scores.blue > scores.white) winSummary = "Victoire stratégique de la **Division Bleue** !";
                 if (scores.white > scores.blue) winSummary = "Victoire stratégique de la **Division Blanche** !";
 
-                // Distribution des récompenses aux vainqueurs
                 const ultimateWinner = scores.blue > scores.white ? 'blue' : (scores.white > scores.blue ? 'white' : null);
                 if (ultimateWinner) {
                     pool.forEach((team, userId) => {
