@@ -34,6 +34,98 @@ const updateUserData = (id, coinsAdd, levelAdd) => {
     userDatabase.set(id, data);
 };
 
+// ==========================================
+// NOUVEAU SYSTÈME : GAIN DE POINTS PAR MESSAGE + STREAK
+// ==========================================
+// Règles :
+// - Un message rapporte des Kyo Points seulement si 10 minutes se sont
+//   écoulées depuis le dernier message récompensé (cooldown anti-spam).
+// - Maximum 6 messages récompensés par jour (6 x 10 min = 1 heure d'activité).
+// - Si le maximum journalier est atteint plusieurs jours d'affilée,
+//   le "streak" augmente de +1 chaque jour.
+// - Le streak ajoute des points bonus à CHAQUE message (10 + streak),
+//   jusqu'à un maximum de +25 points bonus (donc 35 points/message au max).
+// - Si une journée est ratée (le max de 6 messages n'est pas atteint),
+//   le streak retombe à 0.
+
+const MESSAGE_COOLDOWN_MS = 10 * 60 * 1000; // 10 minutes entre chaque message récompensé
+const MAX_DAILY_REWARDED_MESSAGES = 6;      // 6 x 10 min = 1 heure d'activité par jour
+const BASE_MESSAGE_POINTS = 10;             // Points de base par message
+const MAX_STREAK_BONUS = 25;                // Bonus maximum lié au streak
+
+const userActivityData = new Map();
+
+const getActivityData = (id) => {
+    if (!userActivityData.has(id)) {
+        userActivityData.set(id, {
+            lastRewardTime: 0,       // Timestamp du dernier message récompensé
+            dailyCount: 0,           // Nombre de messages récompensés aujourd'hui
+            activeDate: null,        // Date (YYYY-MM-DD) du jour en cours de suivi
+            streak: 0,               // Nombre de jours consécutifs réussis
+            lastCompletedDate: null  // Dernier jour où le max journalier a été atteint
+        });
+    }
+    return userActivityData.get(id);
+};
+
+const getTodayString = () => new Date().toISOString().split('T')[0];
+
+// --- LISTENER : MESSAGES TEXTUELS (GAIN DE POINTS) ---
+client.on('messageCreate', async message => {
+    if (message.author.bot || !message.guild) return;
+
+    const userId = message.author.id;
+    const now = Date.now();
+    const today = getTodayString();
+    const data = getActivityData(userId);
+
+    // --- Gestion du changement de jour + validation du streak ---
+    if (data.activeDate !== today) {
+        if (data.activeDate) {
+            const lastDate = new Date(data.activeDate);
+            const currentDate = new Date(today);
+            const diffDays = Math.round((currentDate - lastDate) / (1000 * 60 * 60 * 24));
+
+            // Le streak casse si le jour précédent n'a pas été complété
+            // OU si plus d'un jour s'est écoulé depuis la dernière activité.
+            if (diffDays !== 1 || data.lastCompletedDate !== data.activeDate) {
+                data.streak = 0;
+            }
+        }
+        data.dailyCount = 0;
+        data.activeDate = today;
+    }
+
+    // --- Cooldown : il faut attendre 10 minutes entre chaque message récompensé ---
+    if (now - data.lastRewardTime < MESSAGE_COOLDOWN_MS) return;
+
+    // --- Plafond journalier atteint : plus de points aujourd'hui ---
+    if (data.dailyCount >= MAX_DAILY_REWARDED_MESSAGES) return;
+
+    // --- Calcul des points (base + bonus de streak plafonné) ---
+    const streakBonus = Math.min(data.streak, MAX_STREAK_BONUS);
+    const pointsEarned = BASE_MESSAGE_POINTS + streakBonus;
+
+    updateUserData(userId, pointsEarned, 0);
+    data.lastRewardTime = now;
+    data.dailyCount++;
+
+    // --- Si le max journalier vient d'être atteint : le jour est "complété" ---
+    if (data.dailyCount === MAX_DAILY_REWARDED_MESSAGES) {
+        data.lastCompletedDate = today;
+        data.streak++;
+
+        const nextBonus = Math.min(data.streak, MAX_STREAK_BONUS);
+        message.channel.send({
+            content: `🔥 <@${userId}> vient de compléter son heure d'activité du jour !\n` +
+                      `**Streak actuel :** \`${data.streak} jour(s)\`\n` +
+                      `Demain, chaque message récompensé rapportera **${BASE_MESSAGE_POINTS + nextBonus} Kyo Points** au lieu de ${BASE_MESSAGE_POINTS}.`
+        }).catch(() => null);
+    }
+
+    userActivityData.set(userId, data);
+});
+
 // --- CONFIGURATION DES COMMANDES SLASH ---
 const commands = [
     {
@@ -286,7 +378,16 @@ client.on('interactionCreate', async interaction => {
     if (interaction.commandName === 'kyo-hub') {
         const hubMain = new EmbedBuilder()
             .setAuthor({ name: 'KYO NETWORK • INTERFACE INTERNE', iconURL: client.user.displayAvatarURL() })
-            .setDescription("───\n**◎ ACQUISITION DE FLUX**\n└ Parlez pour collecter des **Kyo Points**.\n\n**◎ MODULES D'ANALYSE**\n└ Accédez à vos statistiques personnelles.\n───")
+            .setDescription(
+                "───\n" +
+                "**◎ ACQUISITION DE FLUX**\n" +
+                "└ Envoie un message toutes les **10 minutes** pour gagner **10 Kyo Points**.\n" +
+                "└ Complète **1 heure** d'activité (6 messages) par jour pour construire ton **streak**.\n" +
+                "└ Chaque jour de streak consécutif ajoute **+1 point bonus** par message (max **+25**).\n\n" +
+                "**◎ MODULES D'ANALYSE**\n" +
+                "└ Accédez à vos statistiques personnelles.\n" +
+                "───"
+            )
             .setColor('#1e1f22');
         const hubRow = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('trigger_profile').setLabel('Ouvrir mon profil').setStyle(ButtonStyle.Primary));
         await interaction.reply({ embeds: [hubMain], components: [hubRow] });
@@ -294,7 +395,19 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isButton() && interaction.customId === 'trigger_profile') {
         const currentStats = getUserData(interaction.user.id);
-        const profilePanel = new EmbedBuilder().setAuthor({ name: `DOSSIER PERSONNEL • ${interaction.user.username.toUpperCase()}` }).setDescription(`───\n💰 **Kyo Coins :** \` ${currentStats.coins} \` \n\n📈 **Kyo Level :** \` Nv. ${currentStats.level} \` \n───`).setColor('#5865F2');
+        const activityStats = getActivityData(interaction.user.id);
+        const currentBonus = Math.min(activityStats.streak, MAX_STREAK_BONUS);
+        const profilePanel = new EmbedBuilder()
+            .setAuthor({ name: `DOSSIER PERSONNEL • ${interaction.user.username.toUpperCase()}` })
+            .setDescription(
+                `───\n` +
+                `💰 **Kyo Coins :** \` ${currentStats.coins} \` \n\n` +
+                `📈 **Kyo Level :** \` Nv. ${currentStats.level} \` \n\n` +
+                `🔥 **Streak Actuel :** \` ${activityStats.streak} jour(s) \`\n` +
+                `✦ **Bonus par message :** \` +${currentBonus} points (Total : ${BASE_MESSAGE_POINTS + currentBonus}/msg) \`\n` +
+                `───`
+            )
+            .setColor('#5865F2');
         await interaction.reply({ embeds: [profilePanel], ephemeral: true });
     }
 
@@ -312,7 +425,38 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (interaction.isStringSelectMenu() && interaction.customId === 'guide_router') {
-        let outputMessage = interaction.values[0] === 'g_coins' ? "✦ **Gagner des Kyo Coins :** Parlez dans les salons textuels." : interaction.values[0] === 'g_hub' ? "✦ **Kyo Hub :** Vérifiez vos statistiques." : "✦ **Règlement :** Respectez les règles du serveur.";
+        let outputMessage;
+
+        if (interaction.values[0] === 'g_coins') {
+            outputMessage =
+                `# ✦ GAGNER DES KYO COINS\n\n` +
+                `**📩 Système de messages (Cooldown)**\n` +
+                `Envoie un message dans **n'importe quel salon** pour gagner des points. ` +
+                `Un seul message récompensé toutes les **10 minutes** — spammer ne sert à rien, ` +
+                `le cooldown se réinitialise à chaque message compté.\n\n` +
+                `> 💰 **10 Kyo Points** par message récompensé (de base)\n\n` +
+                `**⏳ Plafond journalier**\n` +
+                `Tu peux gagner des points sur un maximum de **1 heure d'activité par jour**, ` +
+                `soit **6 messages récompensés** (6 x 10 minutes).\n\n` +
+                `**🔥 Le système de STREAK**\n` +
+                `Si tu atteins ton plafond de 6 messages **chaque jour, sans interruption**, ` +
+                `ton **streak** augmente de **+1** à chaque nouvelle journée complétée.\n\n` +
+                `Ce streak ajoute un **bonus permanent à CHAQUE message** que tu envoies :\n` +
+                `> **Points par message = 10 + Streak** (au lieu de 10 fixe)\n\n` +
+                `Exemple : après 3 jours de streak, chaque message récompensé donne **13 Kyo Points** ` +
+                `au lieu de 10, et ce dès le premier message de ta journée.\n\n` +
+                `**🚫 Bonus Maximum**\n` +
+                `Le bonus de streak est **plafonné à +25 points**, donc le maximum absolu est ` +
+                `**35 Kyo Points par message** (10 de base + 25 de streak).\n\n` +
+                `**⚠️ Attention : Streak fragile**\n` +
+                `Si tu **rates une seule journée** (tu n'atteins pas les 6 messages ce jour-là), ` +
+                `ton streak **retombe immédiatement à 0**. Reste actif chaque jour pour ne pas perdre ta progression !`;
+        } else if (interaction.values[0] === 'g_hub') {
+            outputMessage = `# ✦ EXPLOITER LE KYO HUB\nLe Kyo Hub te permet de consulter tes statistiques personnelles : tes Kyo Coins, ton niveau, ainsi que ton streak d'activité actuel et le bonus de points qui y est associé.`;
+        } else {
+            outputMessage = `# ✦ RÈGLEMENT\nRespecte les règles du serveur en tout temps. Tout abus du système de points (spam, multi-comptes, etc.) pourra entraîner une sanction.`;
+        }
+
         await interaction.reply({ content: outputMessage, ephemeral: true });
     }
 
